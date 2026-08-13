@@ -58,6 +58,41 @@ current span rather than a fixed twelve.
 
 ![Forecast icons along the sky dome](docs/weather-dome.png)
 
+## Density
+
+**Density** is `Auto`, `Full` or `Compact`. Auto goes compact below 560px, so a phone
+gets four tiles across and eight cities fit on one screen instead of one and a half.
+
+Compact drops what does not survive the size: the sky dome, the forecast ring, the
+GMT line (the time already tells you which zone you are looking at), the dial numerals
+and the minute ticks. What is left is a tile with the dial's hour bars, the time, the
+next three hours of weather as icons, and a sunrise or sunset icon with the countdown
+to whichever comes first. Dragging a dial to wind time is off in compact — the dial is
+too small to aim at and the gesture would fight with scrolling — but typing a time to
+convert it, and the arrow keys, both still work.
+
+![Compact mode on a phone](docs/compact-phone.png)
+
+## Installing it
+
+`manifest.webmanifest` makes it installable, so it can run in its own window with no
+browser chrome, and get a home-screen or dock icon. Chrome and Edge offer Install;
+iOS and Android use Add to Home Screen.
+
+Without installing anything, `msedge --app=https://timezones.cc` (or `chrome`) also
+opens a chromeless window, which is handy for a wall display.
+
+`sw.js` caches the shell so the installed app works offline. It is network-first for
+same-origin requests, falling back to the cache, so a deploy is picked up on the next
+load rather than the installed copy going stale. Offline you keep the clocks, sunrise,
+sunset and time conversion, since all of those are computed locally; only the forecast
+is missing. The worker is only registered over http(s) — opening `index.html` from disk
+stays a supported way to use this.
+
+The tab title carries the first few clocks, so a pinned tab or a taskbar hover reads
+as a status line. It always shows the real time, never a paused or wound one, since as
+a readout it should not lie about what time it is.
+
 ## Choosing cities
 
 **By URL**, comma-separated, in display order:

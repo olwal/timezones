@@ -9,3 +9,5 @@
 wrangler.jsonc
 README.md
 docs/
+# icons/, manifest.webmanifest, favicon.svg and sw.js are part of the site and
+# must stay deployed.

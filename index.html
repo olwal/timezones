@@ -5,6 +5,14 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="light dark">
 <title>Timezones</title>
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#e9e9e6" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0b0b0b" media="(prefers-color-scheme: dark)">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Timezones">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
@@ -266,6 +274,58 @@ html.frozen .hand-sec { opacity: .3; }
 }
 .next b { font-weight: 500; color: var(--fg); opacity: .75; text-transform: none; }
 
+/* --------------------------------------------------------- compact mode */
+/* Four across on a phone. The time itself says which zone you are looking at,
+   so the GMT line goes; the sky dome and the forecast ring go too, and the
+   forecast becomes three hours in a strip. What is left is a tile you can scan.
+   At this size the numerals and minute ticks are noise, so they are dropped
+   and the dial keeps only its hour bars. */
+.mini-wx { display: none; justify-content: center; gap: 3px; margin-top: 3px; }
+.mini-wx svg { width: 15px; height: 15px; opacity: .55; }
+
+/* Bounded tiles, centred, on anything roomy. A definite max is deliberate here:
+   auto-fill counts repetitions using the max track size, so 132px keeps the
+   tiles from stretching into slabs when only a few cities are on the board. */
+html[data-density="compact"] .grid {
+  grid-template-columns: repeat(auto-fill, minmax(78px, 132px));
+  gap: 8px; justify-content: center;
+}
+/* On a phone that same rule counts 366/140 = 2 tracks, which is the opposite of
+   what is wanted. Switching the max to 1fr makes the count use the 78px minimum
+   instead, giving four across at typical phone widths and dropping to three
+   rather than overflowing on a 320px screen. */
+@media (max-width: 560px) {
+  html[data-density="compact"] .grid {
+    grid-template-columns: repeat(auto-fill, minmax(78px, 1fr));
+  }
+}
+html[data-density="compact"] .card { padding: 7px 5px 0; border-radius: 8px; }
+html[data-density="compact"] .card__name { padding: 0; }
+html[data-density="compact"] .card__name b {
+  font-size: 11px; display: block; max-width: 100%;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+html[data-density="compact"] .card__name span,
+html[data-density="compact"] .skyband,
+html[data-density="compact"] .clock text,
+html[data-density="compact"] .clock .tick-min { display: none; }
+html[data-density="compact"] .card__remove { top: 2px; right: 2px; width: 16px; height: 16px; font-size: 12px; }
+html[data-density="compact"] .clock { max-width: 100%; margin: 3px 0 0; cursor: default; }
+html[data-density="compact"] .digital { margin-top: 1px; gap: 3px; }
+html[data-density="compact"] .digital time { font-size: 15px; }
+html[data-density="compact"] .digital time small { font-size: 8px; margin-left: 1px; }
+html[data-density="compact"] .digital .rel { font-size: 8px; letter-spacing: .06em; }
+html[data-density="compact"] .tedit { font-size: 15px; width: 5.2ch; border-bottom-width: 1px; }
+html[data-density="compact"] .mini-wx { display: flex; }
+html[data-density="compact"] .next {
+  font-size: 9px; letter-spacing: .03em; padding: 5px 2px 7px; margin-top: 5px;
+}
+html[data-density="compact"] .next svg {
+  width: 10px; height: 10px; vertical-align: -2px; margin-right: 2px;
+}
+html[data-density="compact"] .add { min-height: 74px; font-size: 9px; letter-spacing: .06em; }
+html[data-density="compact"] .add svg { width: 14px; height: 14px; }
+
 /* ------------------------------------------------------------- add tile */
 .add {
   border: 1px dashed var(--page-line); border-radius: 10px; background: transparent;
@@ -370,6 +430,15 @@ html.frozen .hand-sec { opacity: .3; }
 </div>
 
 <div class="popover" id="settings" hidden>
+  <section>
+    <h2>Density</h2>
+    <div class="seg" role="radiogroup" aria-label="Density" data-group="density">
+      <button type="button" role="radio" data-val="auto">Auto</button>
+      <button type="button" role="radio" data-val="full">Full</button>
+      <button type="button" role="radio" data-val="compact">Compact</button>
+    </div>
+    <p class="hint" id="hint-density"></p>
+  </section>
   <section>
     <h2>Time format</h2>
     <div class="seg" role="radiogroup" aria-label="Time format" data-group="hour12">
@@ -1057,7 +1126,8 @@ const LS = {
   solar: "worldclock.solar",
   weather: "worldclock.weather",
   ring: "worldclock.ring",
-  units: "worldclock.units"
+  units: "worldclock.units",
+  density: "worldclock.density"
 };
 const store = {
   get(k, fb) { try { const v = localStorage.getItem(k); return v === null ? fb : v; } catch { return fb; } },
@@ -1085,8 +1155,15 @@ let state = {
   solar: store.get(LS.solar, "0") === "1", // false = fixed evening hours
   weather: store.get(LS.weather, "dial"),  // dial | dome | off
   ring: store.get(LS.ring, "icons"),       // icons | temps | both
-  units: store.get(LS.units, "c")          // c | f
+  units: store.get(LS.units, "c"),         // c | f
+  density: store.get(LS.density, "auto")   // auto | full | compact
 };
+if (!["auto", "full", "compact"].includes(state.density)) state.density = "auto";
+
+// Four tiles across needs roughly this much room; below it, auto goes compact.
+const COMPACT_BELOW = 560;
+const compact = () => state.density === "compact" ||
+  (state.density === "auto" && window.innerWidth < COMPACT_BELOW);
 if (!["dial", "dome", "off"].includes(state.weather)) state.weather = "dial";
 if (!["icons", "temps", "both"].includes(state.ring)) state.ring = "icons";
 if (!["c", "f"].includes(state.units)) state.units = "c";
@@ -1292,6 +1369,7 @@ const WXRING = 105;   // where a single forecast ring sits, outside the dial
 const TEMP_RING = 121, ICON_RING_BOTH = 101;
 
 function clockBox() {
+  if (compact()) return { box: "-4 -4 208 208", px: 132 };   // no rings out here
   // Room for the ring plus whatever sits on it. Temperature labels are wide:
   // a four-character reading like -10° needs about 13 units either side of its
   // centre, and at the three and nine o'clock positions that overhangs the box
@@ -1312,7 +1390,8 @@ function faceSVG() {
     const a = i * 6;
     const [x1, y1] = pol(hour ? 76 : 80.5, a);
     const [x2, y2] = pol(85, a);
-    ticks += `<line x1="${x1.toFixed(2)}" y1="${y1.toFixed(2)}" x2="${x2.toFixed(2)}" y2="${y2.toFixed(2)}"
+    ticks += `<line class="${hour ? "tick-hour" : "tick-min"}"
+      x1="${x1.toFixed(2)}" y1="${y1.toFixed(2)}" x2="${x2.toFixed(2)}" y2="${y2.toFixed(2)}"
       stroke="var(--dial-fg)" stroke-width="${hour ? 2.6 : 1}" opacity="${hour ? .92 : .3}" stroke-linecap="butt"/>`;
   }
   let nums = "";
@@ -1362,6 +1441,7 @@ function endDrag() {
 
 function buildCards() {
   stopEdit();          // the card holding the editor is about to be replaced
+  document.documentElement.dataset.density = compact() ? "compact" : "full";
   grid.textContent = "";
   cards = state.ids.map((id, i) => {
     const city = BY_ID.get(id) || BY_ID.get(DEFAULTS[0]);
@@ -1381,6 +1461,7 @@ function buildCards() {
           aria-label="Convert a time in ${city.name} across every city">
         <span class="rel"></span>
       </div>
+      <div class="mini-wx"></div>
       <div class="skyband">
         <svg class="dome" viewBox="0 0 200 ${SKY.h}" aria-hidden="true">${domeSVG()}</svg>
         <div class="sun">
@@ -1406,12 +1487,16 @@ function buildCards() {
     });
 
     // ---- drag the dial to wind time forwards or back
+    // Left off the compact tiles: the dial is too small to aim at, and on a
+    // phone the gesture competes with scrolling the board.
     const clockEl = el.querySelector(".clock");
-    clockEl.addEventListener("pointerdown", e => scrubStart(i, clockEl, e));
-    clockEl.addEventListener("pointermove", scrubMove);
-    clockEl.addEventListener("pointerup", scrubEnd);
-    clockEl.addEventListener("pointercancel", scrubEnd);
-    clockEl.addEventListener("dragstart", e => e.preventDefault());
+    if (!compact()) {
+      clockEl.addEventListener("pointerdown", e => scrubStart(i, clockEl, e));
+      clockEl.addEventListener("pointermove", scrubMove);
+      clockEl.addEventListener("pointerup", scrubEnd);
+      clockEl.addEventListener("pointercancel", scrubEnd);
+      clockEl.addEventListener("dragstart", e => e.preventDefault());
+    }
 
     // ---- drag to reorder
     el.draggable = true;
@@ -1466,7 +1551,8 @@ function buildCards() {
       skySun: el.querySelector(".sky-sun"),
       skyMoon: el.querySelector(".sky-moon"),
       next: el.querySelector(".next"),
-      wxRing: el.querySelector(".wxring")
+      wxRing: el.querySelector(".wxring"),
+      miniWx: el.querySelector(".mini-wx")
     };
   });
 
@@ -1595,7 +1681,30 @@ function update() {
     (state.theme === "auto" && isNight(here.minutes));
   document.documentElement.classList.toggle("dark", dark);
 
+  paintTitle();
+
   requestAnimationFrame(update);
+}
+
+/* The tab title carries the first few clocks, so a pinned tab or a hover over
+   the taskbar reads as a status line. Always the real time, never a paused or
+   wound one: as a readout it should not lie about what time it is. The app name
+   stays on the end so a bookmark is still recognisable. */
+let titleMinute = -1;
+function paintTitle() {
+  const real = Date.now();
+  const minute = Math.floor(real / 60000);
+  if (minute === titleMinute || spinning()) return;
+  titleMinute = minute;
+  const at = new Date(real);
+  const shown = cards.slice(0, 3).map(c => {
+    const p = partsFor(c.city.tz, at);
+    const t = clockText(p.h, p.mi, state.hour12);
+    return t.t + (t.suffix ? t.suffix : "") + " " + c.city.name;
+  });
+  const more = cards.length - shown.length;
+  document.title = (shown.length ? shown.join(" · ") + (more > 0 ? ` +${more}` : "") + " — " : "")
+    + "Timezones";
 }
 
 function paintSlow(c, p, nowMs, viewerDay) {
@@ -1658,8 +1767,10 @@ function paintSlow(c, p, nowMs, viewerDay) {
   c.meta.textContent = c.city.place + " · " + offsetLabel(p.offset);
 
   const dayDelta = Math.round((Date.UTC(p.y, p.mo - 1, p.d) - viewerDay) / 86400000);
-  c.rel.textContent = dayDelta === 0 ? "today" : dayDelta === 1 ? "tomorrow"
-    : dayDelta === -1 ? "yesterday" : (dayDelta > 0 ? "+" : "−") + Math.abs(dayDelta) + "d";
+  const short = dayDelta === 0 ? "" : (dayDelta > 0 ? "+" : "−") + Math.abs(dayDelta) + "d";
+  c.rel.textContent = compact() ? short
+    : dayDelta === 0 ? "today" : dayDelta === 1 ? "tomorrow"
+    : dayDelta === -1 ? "yesterday" : short;
 
   // ---- whichever working-day boundary comes round next, and nothing else
   const m = p.minutes;
@@ -1667,8 +1778,12 @@ function paintSlow(c, p, nowMs, viewerDay) {
   const toMorning = wrapDay(morning - m), toEvening = wrapDay(evening - m);
   const morningNext = toMorning <= toEvening;
   const mins = morningNext ? toMorning : toEvening;
-  c.next.innerHTML = `<b>${fmtDur(mins)}</b> till ${morningNext ? "morning" : "evening"} ` +
-    stamp(morningNext ? morning : evening, state.hour12);
+  // Compact has no room for words, so the sunrise/sunset icon carries the sense
+  // of which end of the day is coming next.
+  c.next.innerHTML = compact()
+    ? (morningNext ? ICON_SUNRISE : ICON_SUNSET) + `<b>${fmtDur(mins)}</b>`
+    : `<b>${fmtDur(mins)}</b> till ${morningNext ? "morning" : "evening"} ` +
+      stamp(morningNext ? morning : evening, state.hour12);
 }
 
 /* -----------------------------------------------------------------------
@@ -1680,7 +1795,8 @@ function paintWeather(c, nowMs, sunUp) {
   if (state.weather === "off") {
     if (c._wxKey !== "off") {
       c._wxKey = "off";
-      c.wx.textContent = ""; c.wxRing.textContent = ""; c.wxNow.textContent = "";
+      c.wx.textContent = ""; c.wxRing.textContent = "";
+      c.wxNow.textContent = ""; c.miniWx.textContent = "";
     }
     return;
   }
@@ -1692,13 +1808,32 @@ function paintWeather(c, nowMs, sunUp) {
 
   const hour = Math.floor(nowMs / 3600000);
   const key = state.weather + "|" + state.ring + "|" + state.units + "|" + hour +
-              "|" + Math.round(c._spanTo / 60000) + "|" + sunUp + "|" + data.at;
+              "|" + Math.round(c._spanTo / 60000) + "|" + sunUp + "|" + data.at +
+              "|" + (compact() ? "c" : "f");
   if (c._wxKey === key) return;
   c._wxKey = key;
 
   // Current conditions go in the middle of the sunrise/sunset row either way.
   const nowRow = data.rows.find(r => r[0] > nowMs - 3600000 && r[0] <= nowMs + 1800000);
   c.wxNow.innerHTML = nowRow ? wxSpan(wxIcon(nowRow[1], sunUp), fmtTemp(nowRow[2])) : "";
+
+  // Compact tiles carry the next three hours as a strip instead of a ring.
+  if (compact()) {
+    c.wx.textContent = "";
+    c.wxRing.textContent = "";
+    c.miniWx.innerHTML = data.rows.filter(r => r[0] > nowMs).slice(0, 3).map(([ts, code, temp]) => {
+      const p2 = partsFor(c.city.tz, new Date(ts));
+      const s2 = sunFor(c.city, p2);
+      const up = s2.polar ? s2.polar === "day" : (ts >= s2.sunrise && ts < s2.sunset);
+      const key2 = wxIcon(code, up);
+      return `<svg viewBox="0 0 16 16"><title>${stamp(p2.minutes, state.hour12)} · ` +
+        `${WX_TEXT[key2]}, ${fmtTemp(temp)}</title>` +
+        `<g fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"
+           stroke-linejoin="round">${WX[key2]}</g></svg>`;
+    }).join("");
+    return;
+  }
+  c.miniWx.textContent = "";
 
   if (state.weather === "dial") {
     c.wx.textContent = "";
@@ -2151,6 +2286,11 @@ const HINTS = {
     icons: "Conditions only. The gap in the ring is the current hour; it reads clockwise from there.",
     temps: "Temperatures only, at each hour position.",
     both: "Temperatures on an outer ring, conditions on an inner one."
+  },
+  density: {
+    auto: `Compact below ${COMPACT_BELOW}px wide, full above it.`,
+    full: "Every card carries its dial, sky dome and forecast ring.",
+    compact: "Four tiles across: dial, time, and the next three hours. No dome, no dial dragging."
   }
 };
 
@@ -2159,7 +2299,8 @@ const settingValue = group =>
   group === "solar" ? (state.solar ? "1" : "0") :
   group === "weather" ? state.weather :
   group === "ring" ? state.ring :
-  group === "units" ? state.units : state.theme;
+  group === "units" ? state.units :
+  group === "density" ? state.density : state.theme;
 
 function syncTools() {
   for (const seg of settings.querySelectorAll(".seg")) {
@@ -2173,6 +2314,7 @@ function syncTools() {
   document.getElementById("hint-solar").textContent = HINTS.solar[settingValue("solar")];
   document.getElementById("hint-weather").textContent = HINTS.weather[state.weather];
   document.getElementById("hint-ring").textContent = HINTS.ring[state.ring];
+  document.getElementById("hint-density").textContent = HINTS.density[state.density];
   document.getElementById("hint-theme").textContent = state.theme === "auto"
     ? `Dark between ${stamp(CONFIG.nightFrom, state.hour12)} and ` +
       `${stamp(CONFIG.nightTo, state.hour12)} where you are.`
@@ -2191,11 +2333,11 @@ function applySetting(group, val) {
     state.solar = val === "1";
     store.set(LS.solar, val);
     for (const c of cards) c._k = undefined;    // repaint the dials at once
-  } else if (group === "weather" || group === "ring") {
+  } else if (group === "weather" || group === "ring" || group === "density") {
     state[group] = val;
     store.set(LS[group], val);
     syncTools();
-    buildCards();                               // the rings need a roomier viewBox
+    buildCards();          // viewBox, layout and which handlers apply all change
     return;
   } else if (group === "units") {
     state.units = val;
@@ -2289,6 +2431,25 @@ syncTools();
 persist();
 buildCards();
 update();
+
+// On auto, crossing the breakpoint changes the layout, the viewBox and which
+// handlers are attached, so the cards have to be rebuilt — but only when the
+// answer actually flips, not on every resize event.
+let wasCompact = compact();
+let resizeTimer;
+addEventListener("resize", () => {
+  clearTimeout(resizeTimer);
+  resizeTimer = setTimeout(() => {
+    if (compact() !== wasCompact) { wasCompact = compact(); buildCards(); }
+  }, 150);
+});
+
+// Offline support, only when actually served: registering a worker from a file://
+// URL throws, and opening index.html straight from disk is a supported way to
+// use this.
+if ("serviceWorker" in navigator && location.protocol.startsWith("http")) {
+  addEventListener("load", () => navigator.serviceWorker.register("sw.js").catch(() => {}));
+}
 
 // The first update() has now settled every card into its day/night skin, so
 // re-enable the cross-fades for everything that happens from here on.
