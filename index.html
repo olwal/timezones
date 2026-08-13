@@ -1,0 +1,1698 @@
+<!DOCTYPE html>
+<html lang="en" class="booting">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>World Clock</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+/* ---------------------------------------------------------------- reset */
+*, *::before, *::after { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; }
+
+/* ---------------------------------------------------------------- theme */
+:root {
+  --page: #e9e9e6;
+  --page-fg: #1a1a18;
+  --page-muted: #86867f;
+  --page-line: rgba(0,0,0,.12);
+  --accent: #f5c400;
+  --font: "Inter", "Inter var", -apple-system, "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+  --r: 4px;
+  /* Card surface. Follows the page theme, never the city's local darkness —
+     only the dial itself fades, so card text keeps full contrast. */
+  --face: #fff;
+  --fg: #131311;
+  --muted: #8d8d86;
+  --edge: rgba(0,0,0,.10);
+  --sun: #e5a52c;
+  --moon: #9d9d94;
+}
+html.dark {
+  --page: #0b0b0b;
+  --page-fg: #f0f0ee;
+  --page-muted: #6f6f6a;
+  --page-line: rgba(255,255,255,.14);
+  --face: #151515;
+  --fg: #f0f0ee;
+  --muted: #78786f;
+  --edge: rgba(255,255,255,.14);
+  --sun: #c98f21;
+  --moon: #d3d3ca;
+}
+
+/* No cross-fades on the very first paint, so a night board doesn't flash light. */
+html.booting *, html.booting *::before, html.booting *::after { transition: none !important; }
+
+body {
+  background: var(--page);
+  color: var(--page-fg);
+  font-family: var(--font);
+  -webkit-font-smoothing: antialiased;
+  font-feature-settings: "tnum" 1;
+  transition: background-color .5s ease, color .5s ease;
+  min-height: 100vh;
+  padding: 28px max(16px, 3vw) 64px;
+}
+
+/* --------------------------------------------------------------- header */
+.top {
+  max-width: 1160px; margin: 0 auto 26px;
+  display: flex; align-items: baseline; gap: 16px; flex-wrap: wrap;
+}
+.top h1 {
+  font-size: 15px; font-weight: 600; letter-spacing: .16em;
+  text-transform: uppercase; margin: 0;
+}
+.top .sub { font-size: 12px; color: var(--page-muted); letter-spacing: .04em; }
+.top .spacer { flex: 1 1 40px; }
+.tools { display: flex; gap: 6px; align-items: center; }
+
+.btn {
+  font: inherit; font-size: 11px; letter-spacing: .09em; text-transform: uppercase;
+  color: var(--page-fg); background: transparent;
+  border: 1px solid var(--page-line); border-radius: var(--r);
+  padding: 6px 10px; cursor: pointer;
+  transition: background-color .15s ease, border-color .15s ease, opacity .15s ease;
+}
+.btn:hover { border-color: currentColor; }
+.btn:active { transform: translateY(1px); }
+.btn[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: #111; }
+.btn:focus-visible, .card__name:focus-visible, .card__remove:focus-visible,
+.add:focus-visible, .row:focus-visible {
+  outline: 2px solid var(--accent); outline-offset: 2px;
+}
+#search:focus { outline: none; border-bottom-color: var(--accent); box-shadow: 0 1px 0 var(--accent); }
+
+/* ---------------------------------------------------------------- grid */
+.grid {
+  max-width: 1160px; margin: 0 auto;
+  display: grid; gap: 18px;
+  grid-template-columns: repeat(auto-fill, minmax(232px, 1fr));
+}
+
+/* ---------------------------------------------------------------- card */
+/* --dial and --dial-fg are rewritten inline every second, interpolated from a
+   0-1 darkness value, so the watch face fades through twilight on its own. */
+.card {
+  --dial: #fff;
+  --dial-fg: #131311;
+  position: relative;
+  background: var(--face); color: var(--fg);
+  border: 1px solid var(--edge); border-radius: 10px;
+  padding: 16px 16px 0;
+  display: flex; flex-direction: column; align-items: center;
+  box-shadow: 0 1px 2px rgba(0,0,0,.10), 0 8px 24px -18px rgba(0,0,0,.5);
+}
+.card.dragging { opacity: .35; }
+.card.drop-into { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.card__name {
+  font: inherit; color: inherit; background: none; border: 0; cursor: pointer;
+  padding: 2px 6px; border-radius: var(--r); text-align: center; width: 100%;
+  display: block;
+}
+.card__name b {
+  display: block; font-size: 15px; font-weight: 600; letter-spacing: .01em;
+  border-bottom: 1px solid transparent; padding-bottom: 1px; display: inline-block;
+}
+.card__name:hover b { border-bottom-color: currentColor; }
+.card__name span {
+  display: block; font-size: 10px; letter-spacing: .1em; text-transform: uppercase;
+  color: var(--muted); margin-top: 4px;
+}
+
+.card__remove {
+  position: absolute; top: 8px; right: 8px; width: 22px; height: 22px;
+  border: 0; border-radius: 50%; background: transparent; color: var(--muted);
+  font: 15px/1 var(--font); cursor: pointer; opacity: 0;
+  transition: opacity .15s ease, color .15s ease;
+}
+.card:hover .card__remove, .card__remove:focus-visible { opacity: 1; }
+.card__remove:hover { color: var(--fg); }
+
+.clock { display: block; width: 100%; max-width: 218px; margin: 8px 0 0; }
+.clock text { font-family: var(--font); }
+
+/* The sky dome closes the card. It and the sunrise/sunset labels share a width
+   so the labels sit directly under the ends of the arc. */
+.skyband { width: 100%; max-width: 210px; margin: 4px 0 10px; }
+.dome { display: block; width: 100%; overflow: visible; }
+
+.digital { display: flex; align-items: baseline; gap: 8px; margin-top: 6px; }
+.digital time {
+  font-size: 26px; font-weight: 300; letter-spacing: .01em;
+  font-variant-numeric: tabular-nums;
+}
+.digital time small { font-size: 12px; font-weight: 400; letter-spacing: .06em; margin-left: 2px; }
+.digital .rel {
+  font-size: 10px; letter-spacing: .1em; text-transform: uppercase; color: var(--muted);
+}
+
+.sun {
+  display: flex; justify-content: space-between; align-items: center;
+  gap: 8px; margin-top: 1px;
+  font-size: 11px; letter-spacing: .06em; color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.sun .sun-polar, .sun .wx-now { margin: 0 auto; }
+.sun .wx-now { display: inline-flex; align-items: center; gap: 4px; }
+.sun .wx-now:empty { display: none; }
+.sun > span { display: inline-flex; align-items: center; gap: 4px; }
+.sun svg { width: 14px; height: 14px; flex: none; opacity: .9; }
+
+/* Only the nearer of the two working-day boundaries, quietly, at the foot. */
+.next {
+  width: 100%; padding: 9px 4px 12px; text-align: center;
+  border-top: 1px solid var(--edge);
+  font-size: 10px; letter-spacing: .09em; text-transform: uppercase;
+  color: var(--muted); font-variant-numeric: tabular-nums;
+}
+.next b { font-weight: 500; color: var(--fg); opacity: .75; text-transform: none; }
+
+/* ------------------------------------------------------------- add tile */
+.add {
+  border: 1px dashed var(--page-line); border-radius: 10px; background: transparent;
+  color: var(--page-muted); font: inherit; font-size: 11px; letter-spacing: .12em;
+  text-transform: uppercase; cursor: pointer; min-height: 148px; align-self: start;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px;
+  transition: color .15s ease, border-color .15s ease;
+}
+.add:hover { color: var(--page-fg); border-color: currentColor; }
+.add svg { width: 22px; height: 22px; }
+
+/* -------------------------------------------------------------- picker */
+.sheet {
+  position: fixed; inset: 0; z-index: 20; display: none;
+  align-items: flex-start; justify-content: center;
+  padding: max(8vh, 40px) 16px 16px;
+  background: rgba(20,20,18,.42); backdrop-filter: blur(3px);
+}
+.sheet.open { display: flex; }
+.panel {
+  width: 100%; max-width: 460px; max-height: 76vh;
+  background: var(--page); color: var(--page-fg);
+  border: 1px solid var(--page-line); border-radius: 10px;
+  box-shadow: 0 30px 70px -30px rgba(0,0,0,.6);
+  display: flex; flex-direction: column; overflow: hidden;
+}
+.panel header {
+  padding: 14px 16px 12px; border-bottom: 1px solid var(--page-line);
+}
+.panel header p {
+  margin: 0 0 10px; font-size: 10px; letter-spacing: .14em; text-transform: uppercase;
+  color: var(--page-muted);
+}
+#search {
+  width: 100%; font: inherit; font-size: 16px; color: inherit;
+  background: transparent; border: 0; border-bottom: 1px solid var(--page-line);
+  padding: 4px 0 8px; border-radius: 0;
+}
+#search::placeholder { color: var(--page-muted); }
+.list { overflow-y: auto; padding: 6px; }
+.row {
+  display: flex; align-items: baseline; gap: 10px; width: 100%;
+  font: inherit; text-align: left; color: inherit;
+  background: transparent; border: 0; border-radius: var(--r);
+  padding: 9px 10px; cursor: pointer;
+}
+.row[aria-selected="true"] { background: rgba(127,127,127,.16); }
+.row b { font-weight: 500; font-size: 14px; }
+.row span { font-size: 11px; color: var(--page-muted); letter-spacing: .04em; }
+.row time {
+  margin-left: auto; font-size: 12px; color: var(--page-muted);
+  font-variant-numeric: tabular-nums; white-space: nowrap;
+}
+.list .empty { padding: 18px 10px; font-size: 13px; color: var(--page-muted); }
+.panel footer {
+  border-top: 1px solid var(--page-line); padding: 10px 12px;
+  display: flex; gap: 8px; justify-content: space-between;
+}
+
+.toast {
+  position: fixed; left: 50%; bottom: 26px; transform: translate(-50%, 12px);
+  background: var(--page-fg); color: var(--page);
+  font-size: 11px; letter-spacing: .1em; text-transform: uppercase;
+  padding: 9px 14px; border-radius: 100px; opacity: 0; pointer-events: none;
+  transition: opacity .2s ease, transform .2s ease; z-index: 30;
+}
+.toast.show { opacity: 1; transform: translate(-50%, 0); }
+
+/* Phones get one column — auto-fill already does that, so only trim the chrome.
+   Forcing two columns here overflows: the working-hours labels don't wrap. */
+@media (max-width: 420px) {
+  .grid { gap: 12px; }
+  .card { padding: 14px 12px 10px; }
+  .digital time { font-size: 24px; }
+}
+</style>
+</head>
+<body>
+
+<div class="top">
+  <h1>World Clock</h1>
+  <span class="sub" id="sub"></span>
+  <span class="spacer"></span>
+  <div class="tools">
+    <button class="btn" id="fmt" aria-pressed="false" title="Toggle 12/24 hour">24h</button>
+    <button class="btn" id="mode" title="What makes a clock face dark: fixed evening hours, or the real sun">Hours</button>
+    <button class="btn" id="wx" title="Forecast around the dial, along the sky dome, or off">Weather dial</button>
+    <button class="btn" id="theme" title="Light / dark / auto">Auto</button>
+    <button class="btn" id="share" title="Copy a link to this dashboard">Copy link</button>
+  </div>
+</div>
+
+<main class="grid" id="grid"></main>
+
+<div class="sheet" id="sheet" role="dialog" aria-modal="true" aria-labelledby="sheetTitle">
+  <div class="panel">
+    <header>
+      <p id="sheetTitle">Choose a city</p>
+      <input id="search" type="text" placeholder="Search city, country or time zone" autocomplete="off" spellcheck="false">
+    </header>
+    <div class="list" id="list" role="listbox" aria-label="Cities"></div>
+    <footer>
+      <button class="btn" id="removeBtn" hidden>Remove clock</button>
+      <button class="btn" id="cancelBtn">Cancel</button>
+    </footer>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+"use strict";
+
+/* =======================================================================
+   City data — [name, country, IANA zone, lat, lon, search aliases]
+   ======================================================================= */
+const CITY_DATA = [
+  ["London","United Kingdom","Europe/London",51.51,-0.13,"uk england"],
+  ["Cambridge","United Kingdom","Europe/London",52.21,0.12,"england"],
+  ["Oxford","United Kingdom","Europe/London",51.75,-1.26,"england"],
+  ["Bristol","United Kingdom","Europe/London",51.45,-2.59,""],
+  ["Birmingham","United Kingdom","Europe/London",52.49,-1.89,""],
+  ["Leeds","United Kingdom","Europe/London",53.80,-1.55,""],
+  ["Edinburgh","United Kingdom","Europe/London",55.95,-3.19,"scotland"],
+  ["Glasgow","United Kingdom","Europe/London",55.86,-4.25,"scotland"],
+  ["Manchester","United Kingdom","Europe/London",53.48,-2.24,""],
+  ["Belfast","United Kingdom","Europe/London",54.60,-5.93,"northern ireland"],
+  ["Cardiff","United Kingdom","Europe/London",51.48,-3.18,"wales"],
+  ["Dublin","Ireland","Europe/Dublin",53.35,-6.26,""],
+  ["Cork","Ireland","Europe/Dublin",51.90,-8.47,""],
+  ["Lisbon","Portugal","Europe/Lisbon",38.72,-9.14,"lisboa"],
+  ["Porto","Portugal","Europe/Lisbon",41.15,-8.61,"oporto"],
+  ["Madrid","Spain","Europe/Madrid",40.42,-3.70,""],
+  ["Barcelona","Spain","Europe/Madrid",41.39,2.17,""],
+  ["Valencia","Spain","Europe/Madrid",39.47,-0.38,""],
+  ["Seville","Spain","Europe/Madrid",37.39,-5.98,"sevilla"],
+  ["Bilbao","Spain","Europe/Madrid",43.26,-2.93,""],
+  ["Malaga","Spain","Europe/Madrid",36.72,-4.42,"málaga"],
+  ["Palma","Spain","Europe/Madrid",39.57,2.65,"mallorca majorca"],
+  ["Las Palmas","Spain","Atlantic/Canary",28.12,-15.44,"canary islands gran canaria"],
+  ["Paris","France","Europe/Paris",48.86,2.35,""],
+  ["Lyon","France","Europe/Paris",45.76,4.84,""],
+  ["Marseille","France","Europe/Paris",43.30,5.37,""],
+  ["Toulouse","France","Europe/Paris",43.60,1.44,""],
+  ["Bordeaux","France","Europe/Paris",44.84,-0.58,""],
+  ["Nice","France","Europe/Paris",43.70,7.27,""],
+  ["Nantes","France","Europe/Paris",47.22,-1.55,""],
+  ["Lille","France","Europe/Paris",50.63,3.06,""],
+  ["Strasbourg","France","Europe/Paris",48.58,7.75,""],
+  ["Brussels","Belgium","Europe/Brussels",50.85,4.35,"bruxelles"],
+  ["Antwerp","Belgium","Europe/Brussels",51.22,4.40,"antwerpen"],
+  ["Ghent","Belgium","Europe/Brussels",51.05,3.72,"gent"],
+  ["Luxembourg","Luxembourg","Europe/Luxembourg",49.61,6.13,""],
+  ["Amsterdam","Netherlands","Europe/Amsterdam",52.37,4.90,"holland"],
+  ["Rotterdam","Netherlands","Europe/Amsterdam",51.92,4.48,""],
+  ["The Hague","Netherlands","Europe/Amsterdam",52.08,4.31,"den haag"],
+  ["Eindhoven","Netherlands","Europe/Amsterdam",51.44,5.48,""],
+  ["Utrecht","Netherlands","Europe/Amsterdam",52.09,5.12,""],
+  ["Berlin","Germany","Europe/Berlin",52.52,13.40,""],
+  ["Munich","Germany","Europe/Berlin",48.14,11.58,"munchen münchen"],
+  ["Frankfurt","Germany","Europe/Berlin",50.11,8.68,""],
+  ["Hamburg","Germany","Europe/Berlin",53.55,9.99,""],
+  ["Cologne","Germany","Europe/Berlin",50.94,6.96,"koln köln"],
+  ["Dusseldorf","Germany","Europe/Berlin",51.23,6.78,"düsseldorf"],
+  ["Stuttgart","Germany","Europe/Berlin",48.78,9.18,""],
+  ["Leipzig","Germany","Europe/Berlin",51.34,12.37,""],
+  ["Dresden","Germany","Europe/Berlin",51.05,13.74,""],
+  ["Zurich","Switzerland","Europe/Zurich",47.38,8.54,"zürich"],
+  ["Geneva","Switzerland","Europe/Zurich",46.20,6.14,"geneve genève"],
+  ["Basel","Switzerland","Europe/Zurich",47.56,7.59,""],
+  ["Bern","Switzerland","Europe/Zurich",46.95,7.45,"berne"],
+  ["Lausanne","Switzerland","Europe/Zurich",46.52,6.63,""],
+  ["Milan","Italy","Europe/Rome",45.46,9.19,"milano"],
+  ["Rome","Italy","Europe/Rome",41.90,12.50,"roma"],
+  ["Florence","Italy","Europe/Rome",43.77,11.26,"firenze"],
+  ["Bologna","Italy","Europe/Rome",44.49,11.34,""],
+  ["Turin","Italy","Europe/Rome",45.07,7.69,"torino"],
+  ["Naples","Italy","Europe/Rome",40.85,14.27,"napoli"],
+  ["Venice","Italy","Europe/Rome",45.44,12.32,"venezia"],
+  ["Palermo","Italy","Europe/Rome",38.12,13.36,"sicily"],
+  ["Catania","Italy","Europe/Rome",37.50,15.09,"sicily"],
+  ["Valletta","Malta","Europe/Malta",35.90,14.51,""],
+  ["Vienna","Austria","Europe/Vienna",48.21,16.37,"wien"],
+  ["Salzburg","Austria","Europe/Vienna",47.81,13.04,""],
+  ["Innsbruck","Austria","Europe/Vienna",47.27,11.39,""],
+  ["Prague","Czechia","Europe/Prague",50.08,14.44,"praha"],
+  ["Brno","Czechia","Europe/Prague",49.20,16.61,""],
+  ["Bratislava","Slovakia","Europe/Bratislava",48.15,17.11,""],
+  ["Ljubljana","Slovenia","Europe/Ljubljana",46.06,14.51,""],
+  ["Copenhagen","Denmark","Europe/Copenhagen",55.68,12.57,"kobenhavn københavn"],
+  ["Aarhus","Denmark","Europe/Copenhagen",56.16,10.20,"århus"],
+  ["Oslo","Norway","Europe/Oslo",59.91,10.75,""],
+  ["Bergen","Norway","Europe/Oslo",60.39,5.32,""],
+  ["Trondheim","Norway","Europe/Oslo",63.43,10.40,""],
+  ["Tromso","Norway","Europe/Oslo",69.65,18.96,"tromsø arctic midnight sun"],
+  ["Longyearbyen","Svalbard","Arctic/Longyearbyen",78.22,15.65,"svalbard spitsbergen arctic"],
+  ["Stockholm","Sweden","Europe/Stockholm",59.33,18.07,""],
+  ["Gothenburg","Sweden","Europe/Stockholm",57.71,11.97,"goteborg göteborg"],
+  ["Malmo","Sweden","Europe/Stockholm",55.60,13.00,"malmö"],
+  ["Uppsala","Sweden","Europe/Stockholm",59.86,17.64,""],
+  ["Helsinki","Finland","Europe/Helsinki",60.17,24.94,""],
+  ["Tampere","Finland","Europe/Helsinki",61.50,23.79,""],
+  ["Turku","Finland","Europe/Helsinki",60.45,22.27,""],
+  ["Tallinn","Estonia","Europe/Tallinn",59.44,24.75,""],
+  ["Riga","Latvia","Europe/Riga",56.95,24.11,""],
+  ["Vilnius","Lithuania","Europe/Vilnius",54.69,25.28,""],
+  ["Warsaw","Poland","Europe/Warsaw",52.23,21.01,"warszawa"],
+  ["Krakow","Poland","Europe/Warsaw",50.06,19.94,"kraków cracow"],
+  ["Gdansk","Poland","Europe/Warsaw",54.35,18.65,"gdańsk"],
+  ["Wroclaw","Poland","Europe/Warsaw",51.11,17.03,"wrocław"],
+  ["Budapest","Hungary","Europe/Budapest",47.50,19.04,""],
+  ["Bucharest","Romania","Europe/Bucharest",44.43,26.10,"bucuresti"],
+  ["Sofia","Bulgaria","Europe/Sofia",42.70,23.32,""],
+  ["Belgrade","Serbia","Europe/Belgrade",44.79,20.45,"beograd"],
+  ["Zagreb","Croatia","Europe/Zagreb",45.81,15.98,""],
+  ["Sarajevo","Bosnia and Herzegovina","Europe/Sarajevo",43.86,18.41,""],
+  ["Skopje","North Macedonia","Europe/Skopje",41.99,21.43,""],
+  ["Tirana","Albania","Europe/Tirane",41.33,19.82,""],
+  ["Athens","Greece","Europe/Athens",37.98,23.73,""],
+  ["Thessaloniki","Greece","Europe/Athens",40.64,22.94,""],
+  ["Nicosia","Cyprus","Asia/Nicosia",35.17,33.36,""],
+  ["Istanbul","Turkey","Europe/Istanbul",41.01,28.98,""],
+  ["Ankara","Turkey","Europe/Istanbul",39.93,32.86,""],
+  ["Izmir","Turkey","Europe/Istanbul",38.42,27.14,""],
+  ["Antalya","Turkey","Europe/Istanbul",36.90,30.70,""],
+  ["Kyiv","Ukraine","Europe/Kyiv",50.45,30.52,"kiev"],
+  ["Lviv","Ukraine","Europe/Kyiv",49.84,24.03,""],
+  ["Odesa","Ukraine","Europe/Kyiv",46.48,30.73,"odessa"],
+  ["Minsk","Belarus","Europe/Minsk",53.90,27.57,""],
+  ["Chisinau","Moldova","Europe/Chisinau",47.01,28.86,""],
+  ["Moscow","Russia","Europe/Moscow",55.76,37.62,"moskva"],
+  ["Saint Petersburg","Russia","Europe/Moscow",59.94,30.31,"st petersburg"],
+  ["Kazan","Russia","Europe/Moscow",55.79,49.12,""],
+  ["Yekaterinburg","Russia","Asia/Yekaterinburg",56.84,60.61,""],
+  ["Reykjavik","Iceland","Atlantic/Reykjavik",64.15,-21.94,""],
+  ["Nuuk","Greenland","America/Nuuk",64.18,-51.72,"godthab"],
+  ["Torshavn","Faroe Islands","Atlantic/Faroe",62.01,-6.77,"tórshavn"],
+
+  ["New York","United States","America/New_York",40.71,-74.01,"nyc usa manhattan brooklyn"],
+  ["Brooklyn","United States","America/New_York",40.68,-73.94,"nyc","New York"],
+  ["Boston","United States","America/New_York",42.36,-71.06,"","Massachusetts"],
+  ["Cambridge","United States","America/New_York",42.37,-71.11,"harvard mit boston","Massachusetts","cambridge-ma"],
+  ["Washington","United States","America/New_York",38.91,-77.04,"dc","District of Columbia"],
+  ["Philadelphia","United States","America/New_York",39.95,-75.17,"","Pennsylvania"],
+  ["Pittsburgh","United States","America/New_York",40.44,-80.00,"","Pennsylvania"],
+  ["Baltimore","United States","America/New_York",39.29,-76.61,"","Maryland"],
+  ["Providence","United States","America/New_York",41.82,-71.41,"","Rhode Island"],
+  ["New Haven","United States","America/New_York",41.31,-72.93,"yale","Connecticut"],
+  ["Hartford","United States","America/New_York",41.76,-72.67,"","Connecticut"],
+  ["Buffalo","United States","America/New_York",42.89,-78.88,"","New York"],
+  ["Rochester","United States","America/New_York",43.16,-77.61,"","New York"],
+  ["Albany","United States","America/New_York",42.65,-73.76,"","New York"],
+  ["Portland","United States","America/New_York",43.66,-70.26,"","Maine","portland-me"],
+  ["Atlanta","United States","America/New_York",33.75,-84.39,"","Georgia"],
+  ["Savannah","United States","America/New_York",32.08,-81.09,"","Georgia"],
+  ["Charleston","United States","America/New_York",32.78,-79.93,"","South Carolina"],
+  ["Raleigh","United States","America/New_York",35.78,-78.64,"","North Carolina"],
+  ["Durham","United States","America/New_York",35.99,-78.90,"duke","North Carolina"],
+  ["Charlotte","United States","America/New_York",35.23,-80.84,"","North Carolina"],
+  ["Richmond","United States","America/New_York",37.54,-77.44,"","Virginia"],
+  ["Miami","United States","America/New_York",25.76,-80.19,"","Florida"],
+  ["Orlando","United States","America/New_York",28.54,-81.38,"","Florida"],
+  ["Tampa","United States","America/New_York",27.95,-82.46,"","Florida"],
+  ["Jacksonville","United States","America/New_York",30.33,-81.66,"","Florida"],
+  ["Detroit","United States","America/Detroit",42.33,-83.05,"","Michigan"],
+  ["Ann Arbor","United States","America/Detroit",42.28,-83.74,"michigan university","Michigan"],
+  ["Cleveland","United States","America/New_York",41.50,-81.69,"","Ohio"],
+  ["Columbus","United States","America/New_York",39.96,-83.00,"","Ohio"],
+  ["Cincinnati","United States","America/New_York",39.10,-84.51,"","Ohio"],
+  ["Indianapolis","United States","America/Indiana/Indianapolis",39.77,-86.16,"","Indiana"],
+  ["Louisville","United States","America/Kentucky/Louisville",38.25,-85.76,"","Kentucky"],
+  ["Chicago","United States","America/Chicago",41.88,-87.63,"","Illinois"],
+  ["Milwaukee","United States","America/Chicago",43.04,-87.91,"","Wisconsin"],
+  ["Madison","United States","America/Chicago",43.07,-89.40,"","Wisconsin"],
+  ["Minneapolis","United States","America/Chicago",44.98,-93.27,"twin cities","Minnesota"],
+  ["St. Louis","United States","America/Chicago",38.63,-90.20,"","Missouri"],
+  ["Kansas City","United States","America/Chicago",39.10,-94.58,"","Missouri"],
+  ["Omaha","United States","America/Chicago",41.26,-95.93,"","Nebraska"],
+  ["Des Moines","United States","America/Chicago",41.59,-93.62,"","Iowa"],
+  ["Nashville","United States","America/Chicago",36.16,-86.78,"","Tennessee"],
+  ["Memphis","United States","America/Chicago",35.15,-90.05,"","Tennessee"],
+  ["New Orleans","United States","America/Chicago",29.95,-90.07,"nola","Louisiana"],
+  ["Oklahoma City","United States","America/Chicago",35.47,-97.52,"","Oklahoma"],
+  ["Austin","United States","America/Chicago",30.27,-97.74,"","Texas"],
+  ["Dallas","United States","America/Chicago",32.78,-96.80,"","Texas"],
+  ["Houston","United States","America/Chicago",29.76,-95.37,"","Texas"],
+  ["San Antonio","United States","America/Chicago",29.42,-98.49,"","Texas"],
+  ["Denver","United States","America/Denver",39.74,-104.99,"","Colorado"],
+  ["Boulder","United States","America/Denver",40.01,-105.27,"","Colorado"],
+  ["Santa Fe","United States","America/Denver",35.69,-105.94,"","New Mexico"],
+  ["Albuquerque","United States","America/Denver",35.08,-106.65,"","New Mexico"],
+  ["El Paso","United States","America/Denver",31.76,-106.49,"","Texas"],
+  ["Salt Lake City","United States","America/Denver",40.76,-111.89,"","Utah"],
+  ["Boise","United States","America/Boise",43.62,-116.20,"","Idaho"],
+  ["Phoenix","United States","America/Phoenix",33.45,-112.07,"","Arizona"],
+  ["Tucson","United States","America/Phoenix",32.22,-110.97,"","Arizona"],
+  ["Las Vegas","United States","America/Los_Angeles",36.17,-115.14,"","Nevada"],
+  ["Reno","United States","America/Los_Angeles",39.53,-119.81,"","Nevada"],
+  ["Los Angeles","United States","America/Los_Angeles",34.05,-118.24,"la socal","California"],
+  ["Santa Monica","United States","America/Los_Angeles",34.02,-118.49,"","California"],
+  ["Pasadena","United States","America/Los_Angeles",34.15,-118.14,"caltech","California"],
+  ["Irvine","United States","America/Los_Angeles",33.68,-117.83,"orange county","California"],
+  ["San Diego","United States","America/Los_Angeles",32.72,-117.16,"","California"],
+  ["Santa Barbara","United States","America/Los_Angeles",34.42,-119.70,"","California"],
+  ["San Francisco","United States","America/Los_Angeles",37.77,-122.42,"sf bay area","California"],
+  ["Oakland","United States","America/Los_Angeles",37.80,-122.27,"east bay","California"],
+  ["Berkeley","United States","America/Los_Angeles",37.87,-122.27,"","California"],
+  ["Palo Alto","United States","America/Los_Angeles",37.44,-122.14,"stanford silicon valley","California"],
+  ["Mountain View","United States","America/Los_Angeles",37.39,-122.08,"silicon valley","California"],
+  ["San Jose","United States","America/Los_Angeles",37.34,-121.89,"silicon valley","California","san-jose-ca"],
+  ["Santa Cruz","United States","America/Los_Angeles",36.97,-122.03,"","California"],
+  ["Sacramento","United States","America/Los_Angeles",38.58,-121.49,"","California"],
+  ["Fresno","United States","America/Los_Angeles",36.74,-119.79,"","California"],
+  ["Seattle","United States","America/Los_Angeles",47.61,-122.33,"","Washington"],
+  ["Spokane","United States","America/Los_Angeles",47.66,-117.43,"","Washington"],
+  ["Portland","United States","America/Los_Angeles",45.52,-122.68,"pdx","Oregon"],
+  ["Eugene","United States","America/Los_Angeles",44.05,-123.09,"","Oregon"],
+  ["Anchorage","United States","America/Anchorage",61.22,-149.90,"alaska","Alaska"],
+  ["Juneau","United States","America/Juneau",58.30,-134.42,"","Alaska"],
+  ["Honolulu","United States","Pacific/Honolulu",21.31,-157.86,"hawaii","Hawaii"],
+  ["Toronto","Canada","America/Toronto",43.65,-79.38,"","Ontario"],
+  ["Ottawa","Canada","America/Toronto",45.42,-75.70,"","Ontario"],
+  ["Waterloo","Canada","America/Toronto",43.46,-80.52,"kitchener","Ontario"],
+  ["Montreal","Canada","America/Toronto",45.50,-73.57,"","Quebec"],
+  ["Quebec City","Canada","America/Toronto",46.81,-71.21,"","Quebec"],
+  ["Halifax","Canada","America/Halifax",44.65,-63.58,"","Nova Scotia"],
+  ["St. John's","Canada","America/St_Johns",47.56,-52.71,"newfoundland","Newfoundland"],
+  ["Winnipeg","Canada","America/Winnipeg",49.90,-97.14,"","Manitoba"],
+  ["Saskatoon","Canada","America/Regina",52.13,-106.67,"","Saskatchewan"],
+  ["Calgary","Canada","America/Edmonton",51.05,-114.07,"","Alberta"],
+  ["Edmonton","Canada","America/Edmonton",53.55,-113.49,"","Alberta"],
+  ["Vancouver","Canada","America/Vancouver",49.28,-123.12,"","British Columbia"],
+  ["Victoria","Canada","America/Vancouver",48.43,-123.37,"","British Columbia"],
+  ["Mexico City","Mexico","America/Mexico_City",19.43,-99.13,"cdmx"],
+  ["Guadalajara","Mexico","America/Mexico_City",20.67,-103.35,""],
+  ["Monterrey","Mexico","America/Monterrey",25.69,-100.32,""],
+  ["Havana","Cuba","America/Havana",23.11,-82.37,"la habana"],
+  ["San Juan","Puerto Rico","America/Puerto_Rico",18.47,-66.11,""],
+  ["Santo Domingo","Dominican Republic","America/Santo_Domingo",18.49,-69.93,""],
+  ["Port-au-Prince","Haiti","America/Port-au-Prince",18.54,-72.34,""],
+  ["Kingston","Jamaica","America/Jamaica",17.97,-76.79,""],
+  ["Nassau","Bahamas","America/Nassau",25.05,-77.35,""],
+  ["Bridgetown","Barbados","America/Barbados",13.11,-59.62,""],
+  ["Port of Spain","Trinidad and Tobago","America/Port_of_Spain",10.65,-61.51,""],
+  ["Willemstad","Curacao","America/Curacao",12.11,-68.93,"curaçao"],
+  ["Belize City","Belize","America/Belize",17.50,-88.20,""],
+  ["Guatemala City","Guatemala","America/Guatemala",14.63,-90.51,""],
+  ["San Salvador","El Salvador","America/El_Salvador",13.69,-89.19,""],
+  ["Tegucigalpa","Honduras","America/Tegucigalpa",14.07,-87.19,""],
+  ["Managua","Nicaragua","America/Managua",12.15,-86.27,""],
+  ["Panama City","Panama","America/Panama",8.98,-79.52,""],
+  ["San Jose","Costa Rica","America/Costa_Rica",9.93,-84.08,""],
+  ["Bogota","Colombia","America/Bogota",4.71,-74.07,"bogotá"],
+  ["Medellin","Colombia","America/Bogota",6.24,-75.58,"medellín"],
+  ["Cali","Colombia","America/Bogota",3.44,-76.52,""],
+  ["Cartagena","Colombia","America/Bogota",10.39,-75.51,""],
+  ["Quito","Ecuador","America/Guayaquil",-0.18,-78.47,""],
+  ["Guayaquil","Ecuador","America/Guayaquil",-2.19,-79.89,""],
+  ["Lima","Peru","America/Lima",-12.05,-77.04,""],
+  ["Arequipa","Peru","America/Lima",-16.41,-71.54,""],
+  ["Cusco","Peru","America/Lima",-13.53,-71.97,"cuzco machu picchu"],
+  ["La Paz","Bolivia","America/La_Paz",-16.50,-68.15,""],
+  ["Santa Cruz de la Sierra","Bolivia","America/La_Paz",-17.78,-63.18,""],
+  ["Santiago","Chile","America/Santiago",-33.45,-70.67,""],
+  ["Valparaiso","Chile","America/Santiago",-33.05,-71.62,"valparaíso"],
+  ["Punta Arenas","Chile","America/Punta_Arenas",-53.16,-70.91,"patagonia"],
+  ["Buenos Aires","Argentina","America/Argentina/Buenos_Aires",-34.60,-58.38,""],
+  ["Cordoba","Argentina","America/Argentina/Cordoba",-31.42,-64.19,"córdoba"],
+  ["Mendoza","Argentina","America/Argentina/Mendoza",-32.89,-68.84,""],
+  ["Rosario","Argentina","America/Argentina/Cordoba",-32.95,-60.64,""],
+  ["Ushuaia","Argentina","America/Argentina/Ushuaia",-54.80,-68.30,"patagonia tierra del fuego"],
+  ["Montevideo","Uruguay","America/Montevideo",-34.90,-56.16,""],
+  ["Asuncion","Paraguay","America/Asuncion",-25.28,-57.63,"asunción"],
+  ["Sao Paulo","Brazil","America/Sao_Paulo",-23.55,-46.63,"são paulo"],
+  ["Rio de Janeiro","Brazil","America/Sao_Paulo",-22.91,-43.17,""],
+  ["Brasilia","Brazil","America/Sao_Paulo",-15.79,-47.88,"brasília"],
+  ["Belo Horizonte","Brazil","America/Sao_Paulo",-19.92,-43.94,""],
+  ["Curitiba","Brazil","America/Sao_Paulo",-25.43,-49.27,""],
+  ["Porto Alegre","Brazil","America/Sao_Paulo",-30.03,-51.23,""],
+  ["Salvador","Brazil","America/Bahia",-12.97,-38.50,"bahia"],
+  ["Recife","Brazil","America/Recife",-8.05,-34.88,""],
+  ["Fortaleza","Brazil","America/Fortaleza",-3.73,-38.52,""],
+  ["Manaus","Brazil","America/Manaus",-3.12,-60.02,"amazon"],
+  ["Belem","Brazil","America/Belem",-1.46,-48.50,"belém"],
+  ["Georgetown","Guyana","America/Guyana",6.80,-58.16,""],
+  ["Paramaribo","Suriname","America/Paramaribo",5.87,-55.17,""],
+  ["Caracas","Venezuela","America/Caracas",10.49,-66.88,""],
+
+  ["Casablanca","Morocco","Africa/Casablanca",33.57,-7.59,""],
+  ["Marrakesh","Morocco","Africa/Casablanca",31.63,-8.01,"marrakech"],
+  ["Rabat","Morocco","Africa/Casablanca",34.02,-6.83,""],
+  ["Algiers","Algeria","Africa/Algiers",36.75,3.06,""],
+  ["Tunis","Tunisia","Africa/Tunis",36.80,10.18,""],
+  ["Cairo","Egypt","Africa/Cairo",30.04,31.24,""],
+  ["Alexandria","Egypt","Africa/Cairo",31.20,29.92,""],
+  ["Khartoum","Sudan","Africa/Khartoum",15.50,32.56,""],
+  ["Dakar","Senegal","Africa/Dakar",14.72,-17.47,""],
+  ["Abidjan","Cote d'Ivoire","Africa/Abidjan",5.36,-4.01,"ivory coast"],
+  ["Accra","Ghana","Africa/Accra",5.60,-0.19,""],
+  ["Lagos","Nigeria","Africa/Lagos",6.52,3.38,""],
+  ["Abuja","Nigeria","Africa/Lagos",9.06,7.49,""],
+  ["Ibadan","Nigeria","Africa/Lagos",7.38,3.90,""],
+  ["Lome","Togo","Africa/Lome",6.14,1.21,"lomé"],
+  ["Cotonou","Benin","Africa/Porto-Novo",6.37,2.42,""],
+  ["Bamako","Mali","Africa/Bamako",12.65,-8.00,""],
+  ["Ouagadougou","Burkina Faso","Africa/Ouagadougou",12.37,-1.53,""],
+  ["Conakry","Guinea","Africa/Conakry",9.64,-13.58,""],
+  ["Freetown","Sierra Leone","Africa/Freetown",8.48,-13.23,""],
+  ["Monrovia","Liberia","Africa/Monrovia",6.30,-10.80,""],
+  ["Douala","Cameroon","Africa/Douala",4.05,9.70,""],
+  ["Yaounde","Cameroon","Africa/Douala",3.87,11.52,"yaoundé"],
+  ["Kinshasa","DR Congo","Africa/Kinshasa",-4.44,15.27,""],
+  ["Luanda","Angola","Africa/Luanda",-8.84,13.23,""],
+  ["Windhoek","Namibia","Africa/Windhoek",-22.56,17.08,""],
+  ["Gaborone","Botswana","Africa/Gaborone",-24.63,25.92,""],
+  ["Harare","Zimbabwe","Africa/Harare",-17.83,31.05,""],
+  ["Lusaka","Zambia","Africa/Lusaka",-15.39,28.32,""],
+  ["Maputo","Mozambique","Africa/Maputo",-25.97,32.57,""],
+  ["Cape Town","South Africa","Africa/Johannesburg",-33.92,18.42,""],
+  ["Johannesburg","South Africa","Africa/Johannesburg",-26.20,28.05,"joburg"],
+  ["Pretoria","South Africa","Africa/Johannesburg",-25.75,28.19,""],
+  ["Durban","South Africa","Africa/Johannesburg",-29.86,31.02,""],
+  ["Nairobi","Kenya","Africa/Nairobi",-1.29,36.82,""],
+  ["Mombasa","Kenya","Africa/Nairobi",-4.04,39.67,""],
+  ["Kigali","Rwanda","Africa/Kigali",-1.94,30.06,""],
+  ["Kampala","Uganda","Africa/Kampala",0.35,32.58,""],
+  ["Dar es Salaam","Tanzania","Africa/Dar_es_Salaam",-6.79,39.21,""],
+  ["Addis Ababa","Ethiopia","Africa/Addis_Ababa",9.03,38.74,""],
+  ["Djibouti","Djibouti","Africa/Djibouti",11.59,43.15,""],
+  ["Antananarivo","Madagascar","Indian/Antananarivo",-18.88,47.51,""],
+  ["Port Louis","Mauritius","Indian/Mauritius",-20.16,57.50,""],
+
+  ["Tel Aviv","Israel","Asia/Jerusalem",32.09,34.78,""],
+  ["Jerusalem","Israel","Asia/Jerusalem",31.77,35.21,""],
+  ["Haifa","Israel","Asia/Jerusalem",32.79,34.99,""],
+  ["Beirut","Lebanon","Asia/Beirut",33.89,35.50,""],
+  ["Amman","Jordan","Asia/Amman",31.95,35.93,""],
+  ["Baghdad","Iraq","Asia/Baghdad",33.31,44.37,""],
+  ["Kuwait City","Kuwait","Asia/Kuwait",29.38,47.99,""],
+  ["Riyadh","Saudi Arabia","Asia/Riyadh",24.71,46.68,""],
+  ["Jeddah","Saudi Arabia","Asia/Riyadh",21.49,39.19,""],
+  ["Medina","Saudi Arabia","Asia/Riyadh",24.47,39.61,"madinah"],
+  ["Manama","Bahrain","Asia/Bahrain",26.23,50.59,""],
+  ["Doha","Qatar","Asia/Qatar",25.29,51.53,""],
+  ["Dubai","UAE","Asia/Dubai",25.20,55.27,"uae emirates"],
+  ["Abu Dhabi","UAE","Asia/Dubai",24.45,54.38,""],
+  ["Sharjah","UAE","Asia/Dubai",25.35,55.42,""],
+  ["Muscat","Oman","Asia/Muscat",23.59,58.41,""],
+  ["Tehran","Iran","Asia/Tehran",35.69,51.39,""],
+  ["Isfahan","Iran","Asia/Tehran",32.65,51.67,"esfahan"],
+  ["Mashhad","Iran","Asia/Tehran",36.30,59.61,""],
+  ["Erbil","Iraq","Asia/Baghdad",36.19,44.01,"kurdistan"],
+  ["Baku","Azerbaijan","Asia/Baku",40.41,49.87,""],
+  ["Tbilisi","Georgia","Asia/Tbilisi",41.72,44.79,""],
+  ["Yerevan","Armenia","Asia/Yerevan",40.18,44.51,""],
+  ["Kabul","Afghanistan","Asia/Kabul",34.53,69.17,""],
+  ["Tashkent","Uzbekistan","Asia/Tashkent",41.30,69.24,""],
+  ["Ashgabat","Turkmenistan","Asia/Ashgabat",37.95,58.38,""],
+  ["Dushanbe","Tajikistan","Asia/Dushanbe",38.56,68.79,""],
+  ["Bishkek","Kyrgyzstan","Asia/Bishkek",42.87,74.59,""],
+  ["Almaty","Kazakhstan","Asia/Almaty",43.24,76.89,""],
+  ["Astana","Kazakhstan","Asia/Almaty",51.17,71.45,"nur-sultan"],
+  ["Karachi","Pakistan","Asia/Karachi",24.86,67.01,""],
+  ["Lahore","Pakistan","Asia/Karachi",31.55,74.34,""],
+  ["Islamabad","Pakistan","Asia/Karachi",33.68,73.05,""],
+  ["Peshawar","Pakistan","Asia/Karachi",34.01,71.58,""],
+  ["Mumbai","India","Asia/Kolkata",19.08,72.88,"bombay"],
+  ["Delhi","India","Asia/Kolkata",28.61,77.21,"new delhi"],
+  ["Gurugram","India","Asia/Kolkata",28.46,77.03,"gurgaon"],
+  ["Noida","India","Asia/Kolkata",28.54,77.39,""],
+  ["Bengaluru","India","Asia/Kolkata",12.97,77.59,"bangalore"],
+  ["Hyderabad","India","Asia/Kolkata",17.39,78.49,""],
+  ["Chennai","India","Asia/Kolkata",13.08,80.27,"madras"],
+  ["Kolkata","India","Asia/Kolkata",22.57,88.36,"calcutta"],
+  ["Pune","India","Asia/Kolkata",18.52,73.86,""],
+  ["Ahmedabad","India","Asia/Kolkata",23.03,72.58,""],
+  ["Jaipur","India","Asia/Kolkata",26.91,75.79,""],
+  ["Lucknow","India","Asia/Kolkata",26.85,80.95,""],
+  ["Kochi","India","Asia/Kolkata",9.93,76.27,"cochin"],
+  ["Chandigarh","India","Asia/Kolkata",30.73,76.78,""],
+  ["Panaji","India","Asia/Kolkata",15.50,73.83,"goa"],
+  ["Male","Maldives","Indian/Maldives",4.17,73.51,"malé"],
+  ["Colombo","Sri Lanka","Asia/Colombo",6.93,79.86,""],
+  ["Thimphu","Bhutan","Asia/Thimphu",27.47,89.64,"bhutan"],
+  ["Kathmandu","Nepal","Asia/Kathmandu",27.72,85.32,""],
+  ["Dhaka","Bangladesh","Asia/Dhaka",23.81,90.41,""],
+  ["Yangon","Myanmar","Asia/Yangon",16.87,96.20,"rangoon"],
+  ["Bangkok","Thailand","Asia/Bangkok",13.76,100.50,""],
+  ["Chiang Mai","Thailand","Asia/Bangkok",18.79,98.99,""],
+  ["Phuket","Thailand","Asia/Bangkok",7.88,98.39,""],
+  ["Phnom Penh","Cambodia","Asia/Phnom_Penh",11.56,104.92,""],
+  ["Vientiane","Laos","Asia/Vientiane",17.97,102.63,""],
+  ["Hanoi","Vietnam","Asia/Ho_Chi_Minh",21.03,105.85,""],
+  ["Ho Chi Minh City","Vietnam","Asia/Ho_Chi_Minh",10.82,106.63,"saigon"],
+  ["Da Nang","Vietnam","Asia/Ho_Chi_Minh",16.05,108.21,""],
+  ["Kuala Lumpur","Malaysia","Asia/Kuala_Lumpur",3.14,101.69,"kl"],
+  ["Penang","Malaysia","Asia/Kuala_Lumpur",5.41,100.34,"george town"],
+  ["Johor Bahru","Malaysia","Asia/Kuala_Lumpur",1.49,103.74,""],
+  ["Bandar Seri Begawan","Brunei","Asia/Brunei",4.90,114.94,""],
+  ["Singapore","Singapore","Asia/Singapore",1.35,103.82,""],
+  ["Jakarta","Indonesia","Asia/Jakarta",-6.21,106.85,""],
+  ["Surabaya","Indonesia","Asia/Jakarta",-7.26,112.75,""],
+  ["Bandung","Indonesia","Asia/Jakarta",-6.91,107.61,""],
+  ["Medan","Indonesia","Asia/Jakarta",3.59,98.67,""],
+  ["Denpasar","Indonesia","Asia/Makassar",-8.65,115.22,"bali"],
+  ["Makassar","Indonesia","Asia/Makassar",-5.15,119.43,""],
+  ["Manila","Philippines","Asia/Manila",14.60,120.98,""],
+  ["Cebu","Philippines","Asia/Manila",10.32,123.89,""],
+  ["Davao","Philippines","Asia/Manila",7.19,125.46,""],
+  ["Hong Kong","Hong Kong","Asia/Hong_Kong",22.32,114.17,"hk"],
+  ["Macau","Macau","Asia/Macau",22.20,113.55,""],
+  ["Shenzhen","China","Asia/Shanghai",22.54,114.06,""],
+  ["Guangzhou","China","Asia/Shanghai",23.13,113.26,"canton"],
+  ["Shanghai","China","Asia/Shanghai",31.23,121.47,""],
+  ["Suzhou","China","Asia/Shanghai",31.30,120.58,""],
+  ["Hangzhou","China","Asia/Shanghai",30.27,120.16,""],
+  ["Nanjing","China","Asia/Shanghai",32.06,118.80,""],
+  ["Beijing","China","Asia/Shanghai",39.90,116.41,"peking"],
+  ["Tianjin","China","Asia/Shanghai",39.08,117.20,""],
+  ["Qingdao","China","Asia/Shanghai",36.07,120.38,""],
+  ["Wuhan","China","Asia/Shanghai",30.59,114.31,""],
+  ["Xi'an","China","Asia/Shanghai",34.34,108.94,"xian"],
+  ["Chengdu","China","Asia/Shanghai",30.57,104.07,""],
+  ["Chongqing","China","Asia/Shanghai",29.56,106.55,""],
+  ["Kunming","China","Asia/Shanghai",25.04,102.72,""],
+  ["Xiamen","China","Asia/Shanghai",24.48,118.09,""],
+  ["Taipei","Taiwan","Asia/Taipei",25.03,121.57,""],
+  ["Hsinchu","Taiwan","Asia/Taipei",24.80,120.97,""],
+  ["Kaohsiung","Taiwan","Asia/Taipei",22.62,120.31,""],
+  ["Seoul","South Korea","Asia/Seoul",37.57,126.98,""],
+  ["Incheon","South Korea","Asia/Seoul",37.46,126.71,""],
+  ["Daejeon","South Korea","Asia/Seoul",36.35,127.38,""],
+  ["Daegu","South Korea","Asia/Seoul",35.87,128.60,""],
+  ["Busan","South Korea","Asia/Seoul",35.18,129.08,""],
+  ["Jeju","South Korea","Asia/Seoul",33.51,126.52,""],
+  ["Tokyo","Japan","Asia/Tokyo",35.68,139.69,""],
+  ["Yokohama","Japan","Asia/Tokyo",35.44,139.64,""],
+  ["Osaka","Japan","Asia/Tokyo",34.69,135.50,""],
+  ["Kyoto","Japan","Asia/Tokyo",35.01,135.77,""],
+  ["Kobe","Japan","Asia/Tokyo",34.69,135.20,""],
+  ["Nagoya","Japan","Asia/Tokyo",35.18,136.91,""],
+  ["Fukuoka","Japan","Asia/Tokyo",33.59,130.40,""],
+  ["Sendai","Japan","Asia/Tokyo",38.27,140.87,""],
+  ["Naha","Japan","Asia/Tokyo",26.21,127.68,"okinawa"],
+  ["Sapporo","Japan","Asia/Tokyo",43.06,141.35,""],
+  ["Ulaanbaatar","Mongolia","Asia/Ulaanbaatar",47.89,106.91,""],
+  ["Novosibirsk","Russia","Asia/Novosibirsk",55.03,82.92,""],
+  ["Vladivostok","Russia","Asia/Vladivostok",43.12,131.89,""],
+
+  ["Perth","Australia","Australia/Perth",-31.95,115.86,"","Western Australia"],
+  ["Adelaide","Australia","Australia/Adelaide",-34.93,138.60,"","South Australia"],
+  ["Darwin","Australia","Australia/Darwin",-12.46,130.84,"","Northern Territory"],
+  ["Alice Springs","Australia","Australia/Darwin",-23.70,133.88,"","Northern Territory"],
+  ["Brisbane","Australia","Australia/Brisbane",-27.47,153.03,"","Queensland"],
+  ["Gold Coast","Australia","Australia/Brisbane",-28.02,153.40,"","Queensland"],
+  ["Cairns","Australia","Australia/Brisbane",-16.92,145.77,"","Queensland"],
+  ["Melbourne","Australia","Australia/Melbourne",-37.81,144.96,"","Victoria"],
+  ["Sydney","Australia","Australia/Sydney",-33.87,151.21,"","New South Wales"],
+  ["Canberra","Australia","Australia/Sydney",-35.28,149.13,"","ACT"],
+  ["Hobart","Australia","Australia/Hobart",-42.88,147.33,"","Tasmania"],
+  ["Auckland","New Zealand","Pacific/Auckland",-36.85,174.76,"nz"],
+  ["Wellington","New Zealand","Pacific/Auckland",-41.29,174.78,""],
+  ["Christchurch","New Zealand","Pacific/Auckland",-43.53,172.64,""],
+  ["Queenstown","New Zealand","Pacific/Auckland",-45.03,168.66,""],
+  ["Dunedin","New Zealand","Pacific/Auckland",-45.87,170.50,""],
+  ["Hamilton","New Zealand","Pacific/Auckland",-37.79,175.28,""],
+  ["Suva","Fiji","Pacific/Fiji",-18.14,178.44,""],
+  ["Noumea","New Caledonia","Pacific/Noumea",-22.28,166.46,"nouméa"],
+  ["Port Vila","Vanuatu","Pacific/Efate",-17.73,168.32,""],
+  ["Port Moresby","Papua New Guinea","Pacific/Port_Moresby",-9.44,147.18,""],
+  ["Honiara","Solomon Islands","Pacific/Guadalcanal",-9.43,159.96,""],
+  ["Nuku'alofa","Tonga","Pacific/Tongatapu",-21.14,-175.20,""],
+  ["Apia","Samoa","Pacific/Apia",-13.83,-171.77,""],
+  ["Pago Pago","American Samoa","Pacific/Pago_Pago",-14.28,-170.70,""],
+  ["Avarua","Cook Islands","Pacific/Rarotonga",-21.21,-159.78,"rarotonga"],
+  ["Papeete","French Polynesia","Pacific/Tahiti",-17.54,-149.57,"tahiti"],
+  ["Kiritimati","Kiribati","Pacific/Kiritimati",1.87,-157.40,"christmas island earliest"],
+  ["Hagatna","Guam","Pacific/Guam",13.47,144.75,""],
+  ["Coordinated Universal Time","UTC","UTC",0,0,"utc gmt zulu"]
+];
+
+const slug = s => s.toLowerCase().replace(/['’]/g, "").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+
+const CITIES = CITY_DATA.map(([name, country, tz, lat, lon, alias, region, id]) => ({
+  name, country, tz, lat, lon,
+  region: region || "",
+  // Shown on the card: the state or province where that is the more useful
+  // label (Santa Cruz -> California), the country otherwise.
+  place: region || country,
+  id: id || slug(name),
+  hay: (name + " " + country + " " + (region || "") + " " +
+        tz.replace(/[_/]/g, " ") + " " + alias).toLowerCase()
+}));
+
+// Same-name cities in different countries would otherwise collide and one would
+// silently disappear from the lookup, so disambiguate rather than overwrite.
+const BY_ID = new Map();
+for (const c of CITIES) {
+  if (BY_ID.has(c.id)) c.id = slug(c.name + "-" + (c.region || c.country));
+  while (BY_ID.has(c.id)) c.id += "-2";
+  BY_ID.set(c.id, c);
+}
+const DEFAULTS = ["san-francisco", "new-york", "london", "tokyo"];
+
+/* =======================================================================
+   Time-zone helpers
+   ======================================================================= */
+const partFmts = new Map();
+function partsFor(tz, date) {
+  let f = partFmts.get(tz);
+  if (!f) {
+    f = new Intl.DateTimeFormat("en-US", {
+      timeZone: tz, hourCycle: "h23",
+      year: "numeric", month: "2-digit", day: "2-digit",
+      hour: "2-digit", minute: "2-digit", second: "2-digit"
+    });
+    partFmts.set(tz, f);
+  }
+  const o = {};
+  for (const p of f.formatToParts(date)) if (p.type !== "literal") o[p.type] = +p.value;
+  // Wall-clock time in the zone, plus the zone's offset from UTC in minutes.
+  const asUTC = Date.UTC(o.year, o.month - 1, o.day, o.hour, o.minute, o.second);
+  const offset = Math.round((asUTC - Math.floor(date.getTime() / 1000) * 1000) / 60000);
+  return {
+    y: o.year, mo: o.month, d: o.day, h: o.hour, mi: o.minute, s: o.second,
+    offset, minutes: o.hour * 60 + o.minute + o.second / 60,
+    midnightUTC: Date.UTC(o.year, o.month - 1, o.day) - offset * 60000
+  };
+}
+
+function offsetLabel(min) {
+  const sign = min < 0 ? "−" : "+";
+  const a = Math.abs(min), h = Math.floor(a / 60), m = a % 60;
+  return "GMT" + (a === 0 ? "" : sign + h + (m ? ":" + String(m).padStart(2, "0") : ""));
+}
+
+function clockText(h, mi, hour12) {
+  if (!hour12) return { t: String(h).padStart(2, "0") + ":" + String(mi).padStart(2, "0"), suffix: "" };
+  const ap = h < 12 ? "am" : "pm";
+  const hh = h % 12 === 0 ? 12 : h % 12;
+  return { t: hh + ":" + String(mi).padStart(2, "0"), suffix: ap };
+}
+
+// A minutes-past-midnight value as a wall-clock label: "18:00" or "6 pm".
+function stamp(min, hour12) {
+  const v = ((min % 1440) + 1440) % 1440;
+  const t = clockText(Math.floor(v / 60), Math.floor(v % 60), hour12);
+  if (!hour12) return t.t;
+  return (v % 60 === 0 ? t.t.slice(0, -3) : t.t) + " " + t.suffix;
+}
+
+function fmtDur(min) {
+  const total = Math.max(0, Math.round(min));
+  const h = Math.floor(total / 60), m = total % 60;
+  if (h === 0) return m + "m";
+  return h + "h " + String(m).padStart(2, "0") + "m";
+}
+
+/* =======================================================================
+   Sunrise / sunset — NOAA "sunrise equation"
+   ======================================================================= */
+const RAD = Math.PI / 180;
+const toJulian = ms => ms / 86400000 + 2440587.5;
+const fromJulian = j => (j - 2440587.5) * 86400000;
+
+function sunTimes(lat, lon, localNoonUTCms) {
+  const lw = -lon;
+  const n = Math.round(toJulian(localNoonUTCms) - 2451545 - 0.0009 - lw / 360);
+  const Js = 2451545 + 0.0009 + lw / 360 + n;                      // mean solar noon
+  const M = (357.5291 + 0.98560028 * (Js - 2451545)) % 360;        // solar mean anomaly
+  const C = 1.9148 * Math.sin(M * RAD) + 0.02 * Math.sin(2 * M * RAD) + 0.0003 * Math.sin(3 * M * RAD);
+  const L = (M + C + 180 + 102.9372) % 360;                        // ecliptic longitude
+  const Jtransit = Js + 0.0053 * Math.sin(M * RAD) - 0.0069 * Math.sin(2 * L * RAD);
+  const sinDec = Math.sin(L * RAD) * Math.sin(23.4397 * RAD);
+  const cosDec = Math.cos(Math.asin(sinDec));
+  // transit and declination are kept for the altitude calculation below.
+  const out = { transit: fromJulian(Jtransit), sinDec, cosDec };
+  const cosW = (Math.sin(-0.833 * RAD) - Math.sin(lat * RAD) * sinDec) / (Math.cos(lat * RAD) * cosDec);
+  if (cosW > 1) { out.polar = "night"; return out; }                // sun never rises
+  if (cosW < -1) { out.polar = "day"; return out; }                 // sun never sets
+  const w = Math.acos(cosW) / RAD;
+  out.sunrise = fromJulian(Jtransit - w / 360);
+  out.sunset = fromJulian(Jtransit + w / 360);
+  return out;
+}
+
+// Height of the sun above the horizon, in degrees. Works everywhere, including
+// latitudes where the sun never rises or sets.
+function altitudeAt(lat, sun, nowMs) {
+  const H = 360 * (nowMs - sun.transit) / 86400000;   // hour angle from solar noon
+  const s = Math.sin(lat * RAD) * sun.sinDec +
+            Math.cos(lat * RAD) * sun.cosDec * Math.cos(H * RAD);
+  return Math.asin(Math.max(-1, Math.min(1, s))) / RAD;
+}
+
+const sunCache = new Map();
+
+// dayOffset of -1 / +1 gives the neighbouring local day, which is what the
+// night span needs: yesterday's sunset, or tomorrow's sunrise.
+function sunForOffset(city, parts, dayOffset) {
+  const noon = parts.midnightUTC + dayOffset * 86400000 + 12 * 3600000;
+  const key = city.id + "|" + noon;
+  let v = sunCache.get(key);
+  if (!v) {
+    v = sunTimes(city.lat, city.lon, noon);
+    if (sunCache.size > 400) sunCache.clear();
+    sunCache.set(key, v);
+  }
+  return v;
+}
+const sunFor = (city, parts) => sunForOffset(city, parts, 0);
+
+/* =======================================================================
+   Persisted state
+   ======================================================================= */
+const LS = {
+  cities: "worldclock.cities",
+  hour12: "worldclock.hour12",
+  theme: "worldclock.theme",
+  solar: "worldclock.solar",
+  weather: "worldclock.weather"
+};
+const store = {
+  get(k, fb) { try { const v = localStorage.getItem(k); return v === null ? fb : v; } catch { return fb; } },
+  set(k, v) { try { localStorage.setItem(k, v); } catch {} }
+};
+
+function parseIds(raw) {
+  return raw.split(",").map(s => s.trim()).filter(Boolean).map(tok => {
+    const t = tok.toLowerCase();
+    if (BY_ID.has(slug(t))) return slug(t);
+    const byTz = CITIES.find(c => c.tz.toLowerCase() === t.replace(/ /g, "_"));
+    if (byTz) return byTz.id;
+    const loose = CITIES.find(c => c.hay.includes(t));
+    return loose ? loose.id : null;
+  }).filter(Boolean);
+}
+
+const params = new URLSearchParams(location.search);
+const urlCities = params.get("cities") || params.get("c");
+
+let state = {
+  ids: [],
+  hour12: store.get(LS.hour12, "0") === "1",
+  theme: store.get(LS.theme, "auto"),      // auto | light | dark
+  solar: store.get(LS.solar, "0") === "1", // false = fixed evening hours
+  weather: store.get(LS.weather, "dial")   // dial | dome | off
+};
+if (!["dial", "dome", "off"].includes(state.weather)) state.weather = "dial";
+
+if (urlCities) state.ids = parseIds(urlCities);
+if (!state.ids.length) state.ids = parseIds(store.get(LS.cities, ""));
+if (!state.ids.length) state.ids = DEFAULTS.slice();
+
+function persist() {
+  store.set(LS.cities, state.ids.join(","));
+  const q = new URLSearchParams(location.search);
+  q.set("cities", state.ids.join(","));
+  q.delete("c");
+  // Some browsers reject replaceState on file:// — the dashboard still works.
+  try {
+    history.replaceState(null, "", location.pathname + "?" + q.toString() + location.hash);
+  } catch {}
+}
+
+/* =======================================================================
+   Icons — sun over a horizon, with the arrow marking which way it is going
+   ======================================================================= */
+// Kept legible at 14px by giving the pair two differences, not one: the arrow
+// direction, and a sun that sits on the horizon at dawn but has dipped below it
+// at dusk.
+const icon = (sun, arrow) => `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor"
+  stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+  <path d="M1.4 13.2h13.2"/>
+  <path d="${sun}"/>
+  <path d="M8 2.5v4.4"/>
+  <path d="${arrow}"/>
+</svg>`;
+const ICON_SUNRISE = icon("M4.9 13.2a3.1 3.1 0 0 1 6.2 0", "M5.7 4.8 8 2.5l2.3 2.3");
+const ICON_SUNSET  = icon("M4.3 13.2a4.4 4.4 0 0 1 7.4 0", "M5.7 4.6 8 6.9l2.3-2.3");
+
+/* =======================================================================
+   Weather — WMO codes from Open-Meteo, drawn as line icons on a 16x16 grid
+   so they can be dropped straight onto the dome.
+   ======================================================================= */
+const WX_CLOUD = "M5.1 12.4h5.9a2.7 2.7 0 0 0 .2-5.4 3.7 3.7 0 0 0-7-.9 2.9 2.9 0 0 0 .9 6.3Z";
+const wxRays = (cx, cy, r0, r1) => {
+  let s = "";
+  for (let i = 0; i < 8; i++) {
+    const a = i * 45 * RAD, sn = Math.sin(a), cs = Math.cos(a);
+    s += `<path d="M${(cx + sn * r0).toFixed(1)} ${(cy - cs * r0).toFixed(1)}
+      L${(cx + sn * r1).toFixed(1)} ${(cy - cs * r1).toFixed(1)}"/>`;
+  }
+  return s;
+};
+const WX = {
+  clear:  `<circle cx="8" cy="8" r="3.1"/>${wxRays(8, 8, 4.9, 6.8)}`,
+  moon:   `<path d="M10.6 3.4a5.2 5.2 0 1 0 2 4.1 4.2 4.2 0 0 1-2-4.1Z"/>`,
+  partly: `<circle cx="6" cy="5.6" r="2.3"/>${wxRays(6, 5.6, 3.7, 5)}
+           <path d="${WX_CLOUD}"/>`,
+  cloud:  `<path d="${WX_CLOUD}"/>`,
+  fog:    `<path d="${WX_CLOUD}"/><path d="M3.4 14.4h9.2"/>`,
+  drizzle:`<path d="${WX_CLOUD}"/><path d="M6.4 14.1v1.4M9.6 14.1v1.4"/>`,
+  rain:   `<path d="${WX_CLOUD}"/><path d="M5.6 13.9 4.9 15.6M8 13.9l-.7 1.7M10.4 13.9l-.7 1.7"/>`,
+  snow:   `<path d="${WX_CLOUD}"/><path d="M5.6 14.9h.1M8 14.9h.1M10.4 14.9h.1"/>`,
+  storm:  `<path d="${WX_CLOUD}"/><path d="M8.6 13.4 6.6 15.9h2.2l-.6 1.6"/>`
+};
+// WMO code -> icon key. Anything unmapped falls through to cloud.
+function wxIcon(code, sunUp) {
+  if (code === 0) return sunUp ? "clear" : "moon";
+  if (code === 1 || code === 2) return "partly";
+  if (code === 3) return "cloud";
+  if (code === 45 || code === 48) return "fog";
+  if (code >= 51 && code <= 57) return "drizzle";
+  if ((code >= 61 && code <= 67) || (code >= 80 && code <= 82)) return "rain";
+  if ((code >= 71 && code <= 77) || code === 85 || code === 86) return "snow";
+  if (code >= 95) return "storm";
+  return "cloud";
+}
+const WX_TEXT = {
+  clear: "Clear", moon: "Clear", partly: "Partly cloudy", cloud: "Overcast",
+  fog: "Fog", drizzle: "Drizzle", rain: "Rain", snow: "Snow", storm: "Thunderstorm"
+};
+
+// Draw an icon centred on (x, y) at the given scale, in SVG user units.
+function wxGlyph(key, x, y, scale, colour, title, opacity) {
+  const s = (scale / 16).toFixed(4);
+  return `<g transform="translate(${x.toFixed(1)} ${y.toFixed(1)}) scale(${s}) translate(-8 -8)"
+    fill="none" stroke="${colour}" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"
+    ${opacity == null ? "" : `opacity="${opacity.toFixed(2)}"`}>
+    ${title ? `<title>${title}</title>` : ""}${WX[key]}</g>`;
+}
+
+const WX_TTL = 30 * 60 * 1000;         // refetch a city at most twice an hour
+const wxData = new Map();              // cityId -> {at, rows:[[epochMs, code, temp]]}
+const wxPending = new Set();
+
+function wxRead(city) {
+  if (wxData.has(city.id)) return wxData.get(city.id);
+  try {
+    const raw = localStorage.getItem("worldclock.wx." + city.id);
+    if (raw) {
+      const v = JSON.parse(raw);
+      wxData.set(city.id, v);
+      return v;
+    }
+  } catch {}
+  return null;
+}
+
+function wxEnsure(city, onLoad) {
+  if (state.weather === "off") return wxRead(city);
+  const have = wxRead(city);
+  if (have && Date.now() - have.at < WX_TTL) return have;
+  if (wxPending.has(city.id)) return have;
+  wxPending.add(city.id);
+
+  const url = "https://api.open-meteo.com/v1/forecast?latitude=" + city.lat +
+    "&longitude=" + city.lon + "&hourly=weather_code,temperature_2m" +
+    "&forecast_days=3&timeformat=unixtime&timezone=UTC";
+  fetch(url)
+    .then(r => r.ok ? r.json() : Promise.reject(new Error("HTTP " + r.status)))
+    .then(j => {
+      const t = j.hourly.time, c = j.hourly.weather_code, temp = j.hourly.temperature_2m;
+      const rows = t.map((sec, i) => [sec * 1000, c[i], temp[i]]);
+      const v = { at: Date.now(), rows };
+      wxData.set(city.id, v);
+      try { localStorage.setItem("worldclock.wx." + city.id, JSON.stringify(v)); } catch {}
+      onLoad();
+    })
+    .catch(() => { /* offline or blocked: the dome simply shows no icons */ })
+    .finally(() => wxPending.delete(city.id));
+  return have;
+}
+
+/* =======================================================================
+   Clock face (SVG)
+   ======================================================================= */
+const CX = 100, CY = 100;
+const pol = (r, deg) => [CX + r * Math.sin(deg * RAD), CY - r * Math.cos(deg * RAD)];
+
+/* -----------------------------------------------------------------------
+   The sky dome above each dial. The horizontal axis is not clock time — it
+   is progress through the current daylight (or the current night), so the
+   left edge is always sunrise and the right edge always sunset however long
+   the day happens to be. Nothing here can be misread as a clock angle.
+   ----------------------------------------------------------------------- */
+const SKY = {
+  h: 100,       // viewBox height; the extra room is for the forecast icons
+  y: 62,        // the horizon
+  x0: 18, x1: 182,
+  rise: 42,     // how high the sun climbs above the horizon at midday
+  dip: 15       // how far the moon dips below it at midnight
+};
+const skyX = t => 100 - 82 * Math.cos(Math.PI * t);
+const skyY = (t, up) => SKY.y + (up ? -SKY.rise : SKY.dip) * Math.sin(Math.PI * t);
+
+// The body that crosses the dome: a rayed sun by day, a crescent moon by
+// night. Drawn around (0,0) and moved into place with a translate.
+function skyBodies() {
+  let rays = "";
+  for (let i = 0; i < 8; i++) {
+    const a = i * 45;
+    const s = Math.sin(a * RAD), c = Math.cos(a * RAD);
+    rays += `<line x1="${(s * 5).toFixed(2)}" y1="${(-c * 5).toFixed(2)}"
+      x2="${(s * 6.9).toFixed(2)}" y2="${(-c * 6.9).toFixed(2)}"
+      stroke="var(--sun)" stroke-width="1.15" stroke-linecap="round"/>`;
+  }
+  return `
+  <g class="sky-sun">
+    <circle r="8.4" fill="var(--sun)" opacity=".17"/>
+    ${rays}
+    <circle r="3.4" fill="var(--sun)"/>
+  </g>
+  <g class="sky-moon" style="display:none">
+    <circle r="7.4" fill="var(--moon)" opacity=".13"/>
+    <path d="M0 -4.2 A 4.2 4.2 0 0 0 0 4.2 A 5.9 5.9 0 0 1 0 -4.2 Z" fill="var(--moon)"/>
+  </g>`;
+}
+
+function domeSVG() {
+  const { y, x0, x1, rise, dip } = SKY;
+  const day = `M ${x0} ${y} A 82 ${rise} 0 0 1 ${x1} ${y}`;
+  const night = `M ${x0} ${y} A 82 ${dip} 0 0 0 ${x1} ${y}`;
+  return `
+  <path class="dome-fill" d="${day} Z" fill="var(--sun)" opacity=".08"/>
+  <path class="dome-day" d="${day}" fill="none" stroke="var(--sun)" stroke-width="1.5" opacity=".55"/>
+  <path class="dome-night" d="${night}" fill="none" stroke="currentColor" stroke-width="1"
+    stroke-dasharray="2 3" opacity=".22"/>
+  <line x1="6" y1="${y}" x2="194" y2="${y}" stroke="currentColor" stroke-width="1" opacity=".28"/>
+  <line x1="${x0}" y1="${y - 4}" x2="${x0}" y2="${y + 4}" stroke="currentColor" stroke-width="1" opacity=".4"/>
+  <line x1="${x1}" y1="${y - 4}" x2="${x1}" y2="${y + 4}" stroke="currentColor" stroke-width="1" opacity=".4"/>
+  <g class="wx"></g>
+  <g class="sky-body" transform="translate(${x0} ${y})">${skyBodies()}</g>`;
+}
+
+const DIAL = 92;      // dial disc radius
+const WXRING = 105;   // where the hourly forecast icons sit, outside the dial
+
+function faceSVG() {
+  let ticks = "";
+  for (let i = 0; i < 60; i++) {
+    const hour = i % 5 === 0;
+    const a = i * 6;
+    const [x1, y1] = pol(hour ? 76 : 80.5, a);
+    const [x2, y2] = pol(85, a);
+    ticks += `<line x1="${x1.toFixed(2)}" y1="${y1.toFixed(2)}" x2="${x2.toFixed(2)}" y2="${y2.toFixed(2)}"
+      stroke="var(--dial-fg)" stroke-width="${hour ? 2.6 : 1}" opacity="${hour ? .92 : .3}" stroke-linecap="butt"/>`;
+  }
+  let nums = "";
+  for (const [n, a] of [[12, 0], [3, 90], [6, 180], [9, 270]]) {
+    const [x, y] = pol(63, a);
+    nums += `<text x="${x.toFixed(2)}" y="${y.toFixed(2)}" text-anchor="middle" dominant-baseline="central"
+      font-size="12" font-weight="500" fill="var(--dial-fg)" opacity=".8">${n}</text>`;
+  }
+  return `
+  <circle cx="${CX}" cy="${CY}" r="${DIAL}" fill="var(--dial)" stroke="var(--edge)" stroke-width="1"/>
+  <g class="wxring"></g>
+  <g>${ticks}${nums}</g>
+  <g class="hand-hour"  transform="rotate(0 ${CX} ${CY})">
+    <rect x="${CX - 3.1}" y="${CY - 52}" width="6.2" height="60" rx="1.4" fill="var(--dial-fg)"/>
+  </g>
+  <g class="hand-min" transform="rotate(0 ${CX} ${CY})">
+    <rect x="${CX - 2.2}" y="${CY - 74}" width="4.4" height="84" rx="1.1" fill="var(--dial-fg)"/>
+  </g>
+  <g class="hand-sec" transform="rotate(0 ${CX} ${CY})">
+    <rect x="${CX - 0.75}" y="${CY - 78}" width="1.5" height="96" rx="0.75" fill="var(--accent)"/>
+    <circle cx="${CX}" cy="${CY}" r="3.6" fill="var(--accent)"/>
+  </g>
+  <circle cx="${CX}" cy="${CY}" r="1.5" fill="var(--dial)"/>`;
+}
+
+/* =======================================================================
+   Cards
+   ======================================================================= */
+const grid = document.getElementById("grid");
+let cards = [];
+let dragFrom = null;
+
+function buildCards() {
+  grid.textContent = "";
+  cards = state.ids.map((id, i) => {
+    const city = BY_ID.get(id) || BY_ID.get(DEFAULTS[0]);
+    const el = document.createElement("article");
+    el.className = "card day";
+    el.innerHTML = `
+      <button class="card__remove" title="Remove" aria-label="Remove ${city.name}">&times;</button>
+      <button class="card__name" title="Change city">
+        <b>${city.name}</b><span class="meta"></span>
+      </button>
+      <svg class="clock" viewBox="${state.weather === "dial" ? "-14 -14 228 228" : "-4 -4 208 208"}"
+        role="img" aria-label="Analog clock for ${city.name}">${faceSVG()}</svg>
+      <div class="digital">
+        <time></time><span class="rel"></span>
+      </div>
+      <div class="skyband">
+        <svg class="dome" viewBox="0 0 200 ${SKY.h}" aria-hidden="true">${domeSVG()}</svg>
+        <div class="sun">
+          <span class="sun-rise" title="Sunrise">${ICON_SUNRISE}<span class="rise"></span></span>
+          <span class="sun-polar" hidden></span>
+          <span class="wx-now"></span>
+          <span class="sun-set" title="Sunset"><span class="set"></span>${ICON_SUNSET}</span>
+        </div>
+      </div>
+      <div class="next"></div>`;
+    el.querySelector(".card__name").addEventListener("click", () => openPicker(i));
+    el.querySelector(".card__remove").addEventListener("click", () => removeAt(i));
+
+    // ---- drag to reorder
+    el.draggable = true;
+    el.addEventListener("dragstart", e => {
+      dragFrom = i;
+      e.dataTransfer.effectAllowed = "move";
+      e.dataTransfer.setData("text/plain", city.id);
+      el.classList.add("dragging");
+    });
+    el.addEventListener("dragend", () => {
+      el.classList.remove("dragging");
+      for (const o of cards) o.el.classList.remove("drop-into");
+      dragFrom = null;
+    });
+    el.addEventListener("dragover", e => {
+      if (dragFrom === null || dragFrom === i) return;
+      e.preventDefault();
+      e.dataTransfer.dropEffect = "move";
+      el.classList.add("drop-into");
+    });
+    el.addEventListener("dragleave", () => el.classList.remove("drop-into"));
+    el.addEventListener("drop", e => {
+      e.preventDefault();
+      el.classList.remove("drop-into");
+      if (dragFrom === null || dragFrom === i) return;
+      moveCard(dragFrom, i);
+    });
+    grid.appendChild(el);
+    return {
+      city, el,
+      meta: el.querySelector(".meta"),
+      time: el.querySelector("time"),
+      rel: el.querySelector(".rel"),
+      rise: el.querySelector(".rise"),
+      set: el.querySelector(".set"),
+      sunRise: el.querySelector(".sun-rise"),
+      sunSet: el.querySelector(".sun-set"),
+      sunPolar: el.querySelector(".sun-polar"),
+      hourHand: el.querySelector(".hand-hour"),
+      minHand: el.querySelector(".hand-min"),
+      secHand: el.querySelector(".hand-sec"),
+      domeDay: el.querySelector(".dome-day"),
+      domeNight: el.querySelector(".dome-night"),
+      domeFill: el.querySelector(".dome-fill"),
+      wx: el.querySelector(".wx"),
+      wxNow: el.querySelector(".wx-now"),
+      body: el.querySelector(".sky-body"),
+      skySun: el.querySelector(".sky-sun"),
+      skyMoon: el.querySelector(".sky-moon"),
+      next: el.querySelector(".next"),
+      wxRing: el.querySelector(".wxring")
+    };
+  });
+
+  const add = document.createElement("button");
+  add.className = "add";
+  add.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4">
+      <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>Add city`;
+  add.addEventListener("click", () => openPicker(-1));
+  grid.appendChild(add);
+
+  document.getElementById("sub").textContent =
+    state.ids.length + (state.ids.length === 1 ? " city" : " cities");
+}
+
+/* -----------------------------------------------------------------------
+   Configuration — the only numbers you need to touch to reshape the day.
+   ----------------------------------------------------------------------- */
+const CONFIG = {
+  morning:   8 * 60,   // 08:00 — start of the working day
+  evening:  18 * 60,   // 18:00 — end of the working day
+  nightFrom: 20 * 60,  // 20:00 — the clock face turns black  ("hours" mode)
+  nightTo:    6 * 60,  // 06:00 — the clock face turns white again
+  fade:          45,   // minutes either side of those, spent fading
+  dayAbove:       2,   // sun this high  = full daylight        ("solar" mode)
+  nightBelow:    -6    // sun this low   = full dark (civil twilight)
+};
+const isNight = m => m >= CONFIG.nightFrom || m < CONFIG.nightTo;
+
+const clamp01 = v => v < 0 ? 0 : v > 1 ? 1 : v;
+const smooth = t => t * t * (3 - 2 * t);
+// Signed shortest distance in minutes between two points on a 24-hour circle.
+const cyc = d => { const x = ((d % 1440) + 1440) % 1440; return x > 720 ? x - 1440 : x; };
+
+// 0 = full daylight, 1 = full dark. Two ways of deciding, both continuous.
+function darkness(city, sun, p, nowMs) {
+  if (state.solar) {
+    const alt = altitudeAt(city.lat, sun, nowMs);
+    return smooth(clamp01((CONFIG.dayAbove - alt) /
+                          (CONFIG.dayAbove - CONFIG.nightBelow)));
+  }
+  const m = p.minutes;
+  const edge = Math.min(Math.abs(cyc(m - CONFIG.nightFrom)),
+                        Math.abs(cyc(m - CONFIG.nightTo)));
+  const half = smooth(clamp01(edge / CONFIG.fade)) / 2;
+  return isNight(m) ? 0.5 + half : 0.5 - half;
+}
+
+/* Only the watch face fades — the card surface and its text come from the page
+   theme, so a city at dusk never leaves grey text on a grey card.
+   The dial runs white -> warm dusk -> near black. Its markings do NOT
+   interpolate: at the midpoint they would land on the same grey as the dial and
+   vanish, which is the exact problem the fade was meant to avoid. They step
+   instead, and both halves stay legible (black on mid grey is about 5:1,
+   white on mid grey about 4:1). */
+const DIAL_STOPS = [[255, 255, 255], [138, 133, 120], [16, 16, 16]];
+
+function rampColour(stops, k) {
+  const span = 1 / (stops.length - 1);
+  const i = Math.min(stops.length - 2, Math.floor(k / span));
+  const t = (k - i * span) / span;
+  const a = stops[i], b = stops[i + 1];
+  return `rgb(${Math.round(a[0] + (b[0] - a[0]) * t)},` +
+         `${Math.round(a[1] + (b[1] - a[1]) * t)},` +
+         `${Math.round(a[2] + (b[2] - a[2]) * t)})`;
+}
+
+function applyPalette(el, k) {
+  el.style.setProperty("--dial", rampColour(DIAL_STOPS, k));
+  el.style.setProperty("--dial-fg", k < 0.5 ? "#131311" : "#f2f2ef");
+}
+
+const viewerTz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+const wrapDay = v => ((v % 1440) + 1440) % 1440;
+let toolsRev = 0;   // bumped when 12/24h changes, to force a text refresh
+
+function update() {
+  const now = new Date();
+  const nowMs = now.getTime();
+  // Seconds come straight off the epoch rather than the formatted parts, so the
+  // sweep is perfectly continuous and identical on every card. Every IANA zone
+  // is a whole number of minutes from UTC, so seconds-of-minute are universal.
+  const secs = (nowMs % 60000) / 1000;
+  const viewer = partsFor(viewerTz, now);
+  const viewerDay = Date.UTC(viewer.y, viewer.mo - 1, viewer.d);
+  let nightCount = 0;
+
+  for (const c of cards) {
+    const p = partsFor(c.city.tz, now);
+
+    // ---- hands: all three drift continuously; the second hand floats, never ticks
+    c.secHand.setAttribute("transform", `rotate(${secs * 6} ${CX} ${CY})`);
+    c.minHand.setAttribute("transform", `rotate(${(p.mi + secs / 60) * 6} ${CX} ${CY})`);
+    c.hourHand.setAttribute("transform", `rotate(${((p.h % 12) + p.mi / 60 + secs / 3600) * 30} ${CX} ${CY})`);
+
+    // Text and the dome only change once a second — no need to touch the DOM
+    // for them 60 times a second. This also establishes the span the body is
+    // crossing, so it has to run before the body is placed.
+    const rev = p.h * 3600 + p.mi * 60 + p.s + toolsRev * 1e7;
+    if (c._rev !== rev) {
+      c._rev = rev;
+      paintSlow(c, p, nowMs, viewerDay);
+    }
+    if (c._isNight) nightCount++;
+
+    // ---- the sun (or moon) creeps across the dome in real time
+    const t = Math.min(1, Math.max(0, (nowMs - c._spanFrom) / (c._spanTo - c._spanFrom)));
+    c.body.setAttribute("transform",
+      `translate(${skyX(t).toFixed(2)} ${skyY(t, c._sunUp).toFixed(2)})`);
+  }
+
+  // ---- page skin follows the majority of the board when on auto
+  const dark = state.theme === "dark" ||
+    (state.theme === "auto" && cards.length > 0 && nightCount * 2 > cards.length);
+  document.documentElement.classList.toggle("dark", dark);
+
+  requestAnimationFrame(update);
+}
+
+function paintSlow(c, p, nowMs, viewerDay) {
+  // ---- the sky dome: which span are we in, and where inside it?
+  const sun = sunFor(c.city, p);
+  let sunUp, from = null, to = null;
+  if (sun.polar) {
+    // Nothing rises or sets, so run the body across the dome once per day.
+    sunUp = sun.polar === "day";
+    from = p.midnightUTC;
+    to = p.midnightUTC + 86400000;
+    c.sunRise.hidden = c.sunSet.hidden = true;
+    c.sunPolar.hidden = false;
+    c.sunPolar.textContent = sunUp ? "midnight sun" : "polar night";
+  } else {
+    sunUp = nowMs >= sun.sunrise && nowMs < sun.sunset;
+    if (sunUp) {
+      from = sun.sunrise; to = sun.sunset;
+    } else if (nowMs < sun.sunrise) {
+      // Small hours: the span runs from yesterday's sunset to this sunrise.
+      const prev = sunForOffset(c.city, p, -1);
+      from = prev.sunset != null ? prev.sunset : sun.sunrise - 43200000;
+      to = sun.sunrise;
+    } else {
+      const next = sunForOffset(c.city, p, 1);
+      from = sun.sunset;
+      to = next.sunrise != null ? next.sunrise : sun.sunset + 43200000;
+    }
+    c.rise.textContent = stamp(wrapDay((sun.sunrise - p.midnightUTC) / 60000), state.hour12);
+    c.set.textContent = stamp(wrapDay((sun.sunset - p.midnightUTC) / 60000), state.hour12);
+    c.sunRise.hidden = c.sunSet.hidden = false;
+    c.sunPolar.hidden = true;
+  }
+  c._spanFrom = from; c._spanTo = to; c._sunUp = sunUp;
+  // Sun while it is actually above the horizon, moon once it has set.
+  c.skySun.style.display = sunUp ? "" : "none";
+  c.skyMoon.style.display = sunUp ? "none" : "";
+  // Light the half of the dome we are actually in; the other half stays a
+  // faint track. The warm sky fill would read as a brown mass at night.
+  c.domeDay.style.opacity = sunUp ? ".55" : ".18";
+  c.domeNight.style.opacity = sunUp ? ".12" : ".4";
+  c.domeFill.style.opacity = sunUp ? ".085" : "0";
+
+  // ---- day / night skin, faded rather than flipped
+  const k = darkness(c.city, sun, p, nowMs);
+  c._isNight = k > 0.5;
+  if (c._k === undefined || Math.abs(c._k - k) > 0.002) {
+    c._k = k;
+    applyPalette(c.el, k);
+  }
+  c.el.classList.toggle("day", k <= 0.5);
+  c.el.classList.toggle("night", k > 0.5);
+
+  // ---- forecast icons along the dome
+  paintWeather(c, nowMs, sunUp);
+
+  // ---- digital read-out
+  const t = clockText(p.h, p.mi, state.hour12);
+  c.time.innerHTML = t.t + (t.suffix ? `<small>${t.suffix}</small>` : "");
+  c.meta.textContent = c.city.place + " · " + offsetLabel(p.offset);
+
+  const dayDelta = Math.round((Date.UTC(p.y, p.mo - 1, p.d) - viewerDay) / 86400000);
+  c.rel.textContent = dayDelta === 0 ? "today" : dayDelta === 1 ? "tomorrow"
+    : dayDelta === -1 ? "yesterday" : (dayDelta > 0 ? "+" : "−") + Math.abs(dayDelta) + "d";
+
+  // ---- whichever working-day boundary comes round next, and nothing else
+  const m = p.minutes;
+  const { morning, evening } = CONFIG;
+  const toMorning = wrapDay(morning - m), toEvening = wrapDay(evening - m);
+  const morningNext = toMorning <= toEvening;
+  const mins = morningNext ? toMorning : toEvening;
+  c.next.innerHTML = `<b>${fmtDur(mins)}</b> till ${morningNext ? "morning" : "evening"} ` +
+    stamp(morningNext ? morning : evening, state.hour12);
+}
+
+/* -----------------------------------------------------------------------
+   Forecast icons ride the dome alongside the sun, so they cover the span we
+   are currently in: now until sunset by day, now until sunrise by night.
+   Spaced out to at most six so they never collide on a long summer day.
+   ----------------------------------------------------------------------- */
+function paintWeather(c, nowMs, sunUp) {
+  if (state.weather === "off") {
+    if (c._wxKey !== "off") {
+      c._wxKey = "off";
+      c.wx.textContent = ""; c.wxRing.textContent = ""; c.wxNow.textContent = "";
+    }
+    return;
+  }
+  const data = wxEnsure(c.city, () => { c._wxKey = null; });
+  if (!data) return;
+
+  const hour = Math.floor(nowMs / 3600000);
+  const key = state.weather + "|" + hour + "|" + Math.round(c._spanTo / 60000) +
+              "|" + sunUp + "|" + data.at;
+  if (c._wxKey === key) return;
+  c._wxKey = key;
+
+  // Current conditions go in the middle of the sunrise/sunset row either way.
+  const nowRow = data.rows.find(r => r[0] > nowMs - 3600000 && r[0] <= nowMs + 1800000);
+  c.wxNow.innerHTML = nowRow
+    ? wxSpan(wxIcon(nowRow[1], sunUp), Math.round(nowRow[2]))
+    : "";
+
+  if (state.weather === "dial") {
+    c.wx.textContent = "";
+    paintDialRing(c, nowMs, data);
+    return;
+  }
+  c.wxRing.textContent = "";
+
+  const ahead = data.rows.filter(r => r[0] > nowMs + 1800000 && r[0] <= c._spanTo);
+  if (!ahead.length) { c.wx.textContent = ""; return; }
+
+  // Space the icons by distance along the arc, not by time. skyX is a cosine,
+  // so it barely moves near sunrise and sunset while the hours keep passing —
+  // picking every Nth hour piles them up at the ends. Seeding from the sun's
+  // own position also stops the first icon colliding with it.
+  const MIN_GAP = 15;
+  const span = c._spanTo - c._spanFrom;
+  let lastX = skyX(clamp01((nowMs - c._spanFrom) / span));
+  const picks = [];
+  for (const [ts, code, temp] of ahead) {
+    const t = clamp01((ts - c._spanFrom) / span);
+    const x = skyX(t);
+    if (Math.abs(x - lastX) < MIN_GAP) continue;
+    picks.push([t, x, code, temp]);
+    lastX = x;
+    if (picks.length === 6) break;
+  }
+
+  c.wx.innerHTML = picks.map(([t, x, code, temp]) => {
+    const y = skyY(t, sunUp) + (sunUp ? -12.5 : 13.5);
+    const key = wxIcon(code, sunUp);
+    return wxGlyph(key, x, y, 12.5, "currentColor", `${WX_TEXT[key]}, ${Math.round(temp)}°`);
+  }).join("");
+  c.wx.style.opacity = ".5";
+}
+
+/* The next twelve hours, one icon per hour, arranged outside the dial. The
+   analog face already maps hours to angles, so each forecast hour lands on its
+   own hour position — including on the half-hour zones, since the angle comes
+   from that hour's local wall-clock time rather than from a slot index.
+   Opacity falls away with distance in time, which shows the reading direction
+   and stops the ring being ambiguous about which icon is the next hour. */
+function paintDialRing(c, nowMs, data) {
+  const rows = data.rows.filter(r => r[0] > nowMs && r[0] <= nowMs + 12 * 3600000);
+  c.wxRing.innerHTML = rows.map((row, i) => {
+    const [ts, code, temp] = row;
+    const at = new Date(ts);
+    const p2 = partsFor(c.city.tz, at);
+    const sun2 = sunFor(c.city, p2);
+    const up = sun2.polar ? sun2.polar === "day" : (ts >= sun2.sunrise && ts < sun2.sunset);
+    const angle = ((p2.minutes % 720) / 720) * 360;
+    const [x, y] = pol(WXRING, angle);
+    const key = wxIcon(code, up);
+    const label = `${stamp(p2.minutes, state.hour12)} · ${WX_TEXT[key]}, ${Math.round(temp)}°`;
+    return wxGlyph(key, x, y, 15, "currentColor", label,
+                   0.8 - 0.45 * (i / Math.max(1, rows.length - 1)));
+  }).join("");
+}
+
+function wxSpan(key, temp) {
+  return `<svg viewBox="0 0 16 16" aria-hidden="true">${
+    `<g fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"
+       stroke-linejoin="round">${WX[key]}</g>`}</svg><span>${temp}°</span>`;
+}
+
+/* =======================================================================
+   Mutations
+   ======================================================================= */
+function removeAt(i) {
+  if (state.ids.length <= 1) { toast("Keep at least one clock"); return; }
+  state.ids.splice(i, 1);
+  persist(); buildCards();
+}
+function setAt(i, id) {
+  if (i < 0) state.ids.push(id); else state.ids[i] = id;
+  persist(); buildCards();
+}
+function moveCard(from, to) {
+  const [id] = state.ids.splice(from, 1);
+  state.ids.splice(to, 0, id);
+  persist(); buildCards();
+}
+
+/* =======================================================================
+   City picker
+   ======================================================================= */
+const sheet = document.getElementById("sheet");
+const search = document.getElementById("search");
+const list = document.getElementById("list");
+const removeBtn = document.getElementById("removeBtn");
+let target = -1, matches = [], cursor = 0;
+
+function openPicker(i) {
+  target = i;
+  document.getElementById("sheetTitle").textContent =
+    i < 0 ? "Add a city" : "Replace " + (BY_ID.get(state.ids[i]) || {}).name;
+  removeBtn.hidden = i < 0 || state.ids.length <= 1;
+  search.value = "";
+  sheet.classList.add("open");
+  renderList("");
+  search.focus();
+}
+function closePicker() { sheet.classList.remove("open"); target = -1; }
+
+function renderList(q) {
+  const query = q.trim().toLowerCase();
+  const terms = query.split(/\s+/).filter(Boolean);
+  const rank = c => {
+    const n = c.name.toLowerCase(), t = terms[0];
+    if (n.startsWith(t)) return 0;
+    if (n.includes(t)) return 1;
+    if (c.country.toLowerCase().startsWith(t)) return 2;
+    return 3;
+  };
+  matches = (terms.length
+    ? CITIES.filter(c => terms.every(t => c.hay.includes(t)))
+        .sort((a, b) => rank(a) - rank(b) || a.name.localeCompare(b.name))
+    : CITIES.slice()
+  ).slice(0, 120);
+  cursor = 0;
+  list.textContent = "";
+  if (!matches.length) {
+    const p = document.createElement("div");
+    p.className = "empty";
+    p.textContent = "No city matches “" + q.trim() + "”.";
+    list.appendChild(p);
+    return;
+  }
+  const now = new Date();
+  matches.forEach((c, i) => {
+    const p = partsFor(c.tz, now);
+    const t = clockText(p.h, p.mi, state.hour12);
+    const row = document.createElement("button");
+    row.className = "row";
+    row.type = "button";
+    row.setAttribute("role", "option");
+    row.setAttribute("aria-selected", i === 0 ? "true" : "false");
+    row.innerHTML = `<b></b><span></span><time></time>`;
+    row.querySelector("b").textContent = c.name;
+    row.querySelector("span").textContent = c.region ? c.region + ", " + c.country : c.country;
+    row.querySelector("time").textContent = t.t + (t.suffix ? " " + t.suffix : "");
+    row.addEventListener("click", () => { setAt(target, c.id); closePicker(); });
+    row.addEventListener("mousemove", () => moveCursor(i, false));
+    list.appendChild(row);
+  });
+}
+
+function moveCursor(i, scroll = true) {
+  const rows = list.querySelectorAll(".row");
+  if (!rows.length) return;
+  cursor = (i + rows.length) % rows.length;
+  rows.forEach((r, k) => r.setAttribute("aria-selected", k === cursor ? "true" : "false"));
+  if (scroll) rows[cursor].scrollIntoView({ block: "nearest" });
+}
+
+search.addEventListener("input", () => renderList(search.value));
+search.addEventListener("keydown", e => {
+  if (e.key === "ArrowDown") { e.preventDefault(); moveCursor(cursor + 1); }
+  else if (e.key === "ArrowUp") { e.preventDefault(); moveCursor(cursor - 1); }
+  else if (e.key === "Enter") {
+    e.preventDefault();
+    if (matches[cursor]) { setAt(target, matches[cursor].id); closePicker(); }
+  }
+});
+sheet.addEventListener("keydown", e => { if (e.key === "Escape") closePicker(); });
+sheet.addEventListener("mousedown", e => { if (e.target === sheet) closePicker(); });
+document.getElementById("cancelBtn").addEventListener("click", closePicker);
+removeBtn.addEventListener("click", () => { const i = target; closePicker(); removeAt(i); });
+
+/* =======================================================================
+   Header controls
+   ======================================================================= */
+const fmtBtn = document.getElementById("fmt");
+const themeBtn = document.getElementById("theme");
+
+function syncTools() {
+  fmtBtn.textContent = state.hour12 ? "12h" : "24h";
+  fmtBtn.setAttribute("aria-pressed", state.hour12 ? "true" : "false");
+  themeBtn.textContent = state.theme === "auto" ? "Auto" : state.theme === "dark" ? "Dark" : "Light";
+  modeBtn.textContent = state.solar ? "Solar" : "Hours";
+  wxBtn.textContent = state.weather === "off" ? "Weather off" : "Weather " + state.weather;
+  wxBtn.setAttribute("aria-pressed", state.weather === "off" ? "false" : "true");
+}
+
+const modeBtn = document.getElementById("mode");
+const wxBtn = document.getElementById("wx");
+
+modeBtn.addEventListener("click", () => {
+  state.solar = !state.solar;
+  store.set(LS.solar, state.solar ? "1" : "0");
+  for (const c of cards) c._k = undefined;   // force an immediate repaint
+  syncTools();
+  toast(state.solar ? "Dark face follows the real sun" : "Dark face follows 20:00–06:00");
+});
+
+const WX_MODES = ["dial", "dome", "off"];
+wxBtn.addEventListener("click", () => {
+  state.weather = WX_MODES[(WX_MODES.indexOf(state.weather) + 1) % WX_MODES.length];
+  store.set(LS.weather, state.weather);
+  syncTools();
+  buildCards();   // the dial needs a roomier viewBox for the ring
+});
+fmtBtn.addEventListener("click", () => {
+  state.hour12 = !state.hour12;
+  store.set(LS.hour12, state.hour12 ? "1" : "0");
+  toolsRev++;
+  syncTools();
+});
+themeBtn.addEventListener("click", () => {
+  state.theme = state.theme === "auto" ? "light" : state.theme === "light" ? "dark" : "auto";
+  store.set(LS.theme, state.theme);
+  syncTools();
+});
+
+let toastTimer;
+function toast(msg) {
+  const el = document.getElementById("toast");
+  el.textContent = msg;
+  el.classList.add("show");
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove("show"), 1800);
+}
+document.getElementById("share").addEventListener("click", async () => {
+  persist();
+  try {
+    await navigator.clipboard.writeText(location.href);
+    toast("Link copied");
+  } catch {
+    toast(location.href);
+  }
+});
+
+/* =======================================================================
+   Go
+   ======================================================================= */
+syncTools();
+persist();
+buildCards();
+update();
+
+// The first update() has now settled every card into its day/night skin, so
+// re-enable the cross-fades for everything that happens from here on.
+requestAnimationFrame(() => requestAnimationFrame(
+  () => document.documentElement.classList.remove("booting")));
+</script>
+</body>
+</html>
