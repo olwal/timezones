@@ -104,11 +104,24 @@ The field is forgiving about format: `14:30`, `1430`, `930`, `2.30`, `2h30`,
 valid time the underline turns red and the board holds the last good instant, so it
 does not lurch around mid-keystroke.
 
-**Or wind it by hand.** Drag any dial and time turns with it: six degrees is one
-minute, so a full turn is an hour and the minute hand tracks the pointer. Turns
-accumulate, so going round again keeps winding forward. Letting go leaves the board
-paused where you left it, so you can wind again from there as many times as you
-like. `Esc` or a click away returns to now.
+**Or drag a dial like a sprung joystick.** Press on any dial and pull left or right
+of where you started: time runs that way for as long as you hold, faster the further
+you pull — from about 3 minutes a second just outside the dead zone up to 4 hours a
+second at full stretch. Release and it stops, landing on a whole minute. The pill at
+the foot of the screen reports the direction and speed while it runs.
+
+**Or step by the hour.** `←` and `→` move the board back and forward an hour at a
+time, which is usually the fastest way to line a meeting up. They stay out of the way
+where they already mean something: inside the time field they move the caret, inside
+the settings menu they change the setting.
+
+Any of these can be mixed — wind with the joystick, nudge with the arrows, then type
+an exact time. `Esc`, a click away, or a tap on a dial returns to now.
+
+Holding **Shift** while dragging a dial switches to a hidden second gesture that
+winds time literally: six degrees is one minute, so the minute hand tracks the
+pointer and a full turn is an hour. Precise, but tedious over any real distance,
+which is why it is not the default.
 
 Because everything on a card is derived from a single instant, pausing on one makes
 the *whole* card describe that moment, not just the digits: the sky domes move the

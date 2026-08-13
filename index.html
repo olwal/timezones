@@ -224,7 +224,8 @@ html.frozen .hand-sec { opacity: .3; }
 
 .note {
   position: fixed; left: 50%; bottom: 26px; transform: translateX(-50%);
-  z-index: 27; display: flex; align-items: center; gap: 7px;
+  z-index: 27; display: flex; align-items: center; justify-content: center;
+  flex-wrap: wrap; gap: 7px; max-width: calc(100vw - 32px);
   background: var(--face); color: var(--fg);
   border: 1px solid var(--edge); border-radius: 100px;
   padding: 8px 15px; font-size: 11px; letter-spacing: .05em;
@@ -236,6 +237,9 @@ html.frozen .hand-sec { opacity: .3; }
   border: 1px solid var(--edge); border-radius: 3px; padding: 1px 5px;
   background: rgba(127,127,127,.12);
 }
+.note kbd + kbd { margin-left: -4px; }
+.note #noteLabel { font-variant-numeric: tabular-nums; min-width: 8.5ch; }
+.note-sep { opacity: .4; }
 .digital time small { font-size: 12px; font-weight: 400; letter-spacing: .06em; margin-left: 2px; }
 .digital .rel {
   font-size: 10px; letter-spacing: .1em; text-transform: uppercase; color: var(--muted);
@@ -431,9 +435,11 @@ html.frozen .hand-sec { opacity: .3; }
 </div>
 
 <div class="note" id="frozenNote" hidden>
-  <span>Converted time &mdash; clocks paused</span>
-  <kbd>Esc</kbd>
-  <span>for now</span>
+  <span id="noteLabel">Clocks paused</span>
+  <span class="note-sep">&middot;</span>
+  <kbd>&larr;</kbd><kbd>&rarr;</kbd><span>1 hour</span>
+  <span class="note-sep">&middot;</span>
+  <kbd>Esc</kbd><span>current time</span>
 </div>
 
 <div class="toast" id="toast"></div>
@@ -1534,6 +1540,7 @@ const wrapDay = v => ((v % 1440) + 1440) % 1440;
 let toolsRev = 0;   // bumped when 12/24h changes, to force a text refresh
 
 function update() {
+  stepSpin();
   // While a time is being converted the whole board runs off that instant
   // instead of the clock, which is what stops the hands.
   const nowMs = state.frozen != null ? state.frozen : Date.now();
@@ -1556,8 +1563,11 @@ function update() {
 
     // Text and the dome only change once a second — no need to touch the DOM
     // for them 60 times a second. This also establishes the span the body is
-    // crossing, so it has to run before the body is placed.
-    const rev = p.h * 3600 + p.mi * 60 + p.s + toolsRev * 1e7;
+    // crossing, so it has to run before the body is placed. While spinning,
+    // drop to once a minute: at four hours a second the seconds are a blur
+    // nobody can read, and repainting them all is pure cost.
+    const rev = (spinning() ? Math.floor(nowMs / 60000) * 60
+                            : p.h * 3600 + p.mi * 60 + p.s) + toolsRev * 1e7;
     if (c._rev !== rev) {
       c._rev = rev;
       paintSlow(c, p, nowMs, viewerDay);
@@ -1666,6 +1676,9 @@ function paintWeather(c, nowMs, sunUp) {
   }
   const data = wxEnsure(c.city, () => { c._wxKey = null; });
   if (!data) return;
+  // Mid-spin the hour changes several times a second; re-deriving the forecast
+  // that often is wasted work and reads as flicker. scrubEnd refreshes it.
+  if (spinning()) return;
 
   const hour = Math.floor(nowMs / 3600000);
   const key = state.weather + "|" + state.ring + "|" + state.units + "|" + hour +
@@ -1777,6 +1790,7 @@ function wxSpan(key, label) {
 let editing = null;      // index of the card being edited
 let editAnchor = null;   // that city's local date, held still while typing
 const frozenNote = document.getElementById("frozenNote");
+const noteLabel = document.getElementById("noteLabel");
 
 // "14:30", "1430", "930", "2.30", "2:30pm", "9a", "14" ...
 function parseTimeInput(raw) {
@@ -1824,6 +1838,7 @@ function freezeAt(ms) {
   state.frozen = ms;
   document.documentElement.classList.add("frozen");
   frozenNote.hidden = false;
+  setNote();
   repaintAll();
 }
 
@@ -1885,14 +1900,34 @@ function applyTyped(i) {
 }
 
 /* -----------------------------------------------------------------------
-   Winding the clocks by dragging a dial
+   Dragging a dial to move time
 
-   Rotation maps to the minute hand it sits under: six degrees is one minute,
-   so a full turn is an hour and the hand tracks the pointer. Turns accumulate,
-   so winding on round after round keeps going forwards. Releasing leaves the
-   board paused, which is what makes it repeatable.
+   Two gestures live here.
+
+   Spin (the default) is a sprung joystick. Pull left or right of where you
+   pressed and time runs that way, faster the further you pull, until you let
+   go. Pulling is cheap, so covering half a day costs one gesture rather than
+   the dozen turns winding needed.
+
+   Wind (hold Shift) is the literal one: six degrees is one minute, so the
+   minute hand tracks the pointer and a full turn is an hour. Precise, but
+   tedious over any distance, so it is kept as a hidden alternative.
+
+   Either way, releasing leaves the board paused. A press with no drag returns
+   to now, so tapping a dial is the way out as well as Escape.
    ----------------------------------------------------------------------- */
 let scrub = null;
+const spinning = () => !!(scrub && scrub.armed && scrub.mode === "spin" && scrub.rate);
+
+// Minutes of clock time per real second, from how far the pointer has been
+// pulled. Squared so the near end stays controllable while the far end still
+// covers days: about 1.6 min/s just outside the dead zone, up to 4 h/s.
+const SPIN = { dead: 6, gain: 1.6, max: 240, arm: 4 };
+function spinRate(dx) {
+  const pull = Math.abs(dx) - SPIN.dead;
+  if (pull <= 0) return 0;
+  return Math.sign(dx) * Math.min(SPIN.max, SPIN.gain * (pull / 10) ** 2);
+}
 
 const dialAngle = (el, x, y) => {
   const r = el.getBoundingClientRect();
@@ -1905,28 +1940,72 @@ function scrubStart(i, el, e) {
   if (e.button !== undefined && e.button !== 0) return;
   e.preventDefault();
   closeEditor(true);                  // keep any typed instant as the base
-  const base = state.frozen != null ? state.frozen : currentMinute();
-  scrub = { el, base, last: dialAngle(el, e.clientX, e.clientY), turned: 0 };
-  freezeAt(base);
-  // Winding must not also start an HTML5 card drag.
+  scrub = {
+    el, mode: e.shiftKey ? "wind" : "spin",
+    armed: false, rate: 0, tick: Date.now(),
+    ox: e.clientX, base: state.frozen != null ? state.frozen : currentMinute(),
+    last: dialAngle(el, e.clientX, e.clientY), turned: 0
+  };
+  // Neither gesture may also start an HTML5 card drag.
   for (const k of cards) k.el.draggable = false;
   try { el.setPointerCapture(e.pointerId); } catch {}
 }
 
 function scrubMove(e) {
   if (!scrub) return;
-  const a = dialAngle(scrub.el, e.clientX, e.clientY);
-  let d = a - scrub.last;
-  if (d > 180) d -= 360; else if (d < -180) d += 360;
-  scrub.turned += d;
-  scrub.last = a;
-  freezeAt(scrub.base + Math.round(scrub.turned / 6) * 60000);
+  // Nothing happens until the pointer actually moves, so that a plain tap can
+  // still mean "back to now" without the board flickering into a pause first.
+  if (!scrub.armed) {
+    if (Math.abs(e.clientX - scrub.ox) < SPIN.arm &&
+        Math.abs(dialAngle(scrub.el, e.clientX, e.clientY) - scrub.last) < 2) return;
+    scrub.armed = true;
+    scrub.tick = Date.now();
+    freezeAt(scrub.base);
+  }
+  if (scrub.mode === "wind") {
+    const a = dialAngle(scrub.el, e.clientX, e.clientY);
+    let d = a - scrub.last;
+    if (d > 180) d -= 360; else if (d < -180) d += 360;
+    scrub.turned += d;
+    scrub.last = a;
+    freezeAt(scrub.base + Math.round(scrub.turned / 6) * 60000);
+  } else {
+    scrub.rate = spinRate(e.clientX - scrub.ox);   // update() does the moving
+  }
 }
 
 function scrubEnd() {
   if (!scrub) return;
+  const wasArmed = scrub.armed;
   scrub = null;
-  for (const k of cards) k.el.draggable = true;   // stays paused, just not winding
+  for (const k of cards) k.el.draggable = true;
+  if (!wasArmed) { goLive(); return; }             // a tap means back to now
+  // Land on a whole minute so the second hand parks at twelve, and let the
+  // forecast catch up with wherever we ended.
+  state.frozen = Math.round(state.frozen / 60000) * 60000;
+  for (const c of cards) c._wxKey = null;
+  setNote();
+  repaintAll();
+}
+
+// Advance a running spin. Called once per frame from update().
+function stepSpin() {
+  if (!scrub || !scrub.armed || scrub.mode !== "spin") return;
+  const now = Date.now();
+  const dt = Math.min(0.1, (now - scrub.tick) / 1000);   // ignore long stalls
+  scrub.tick = now;
+  if (scrub.rate) state.frozen += scrub.rate * dt * 60000;
+  setNote();
+}
+
+let noteText = "";
+function setNote() {
+  const rate = scrub && scrub.armed && scrub.mode === "spin" ? scrub.rate : 0;
+  const t = !rate ? "Clocks paused"
+    : (rate > 0 ? "Forward " : "Back ") +
+      (Math.abs(rate) < 60 ? Math.round(Math.abs(rate)) + " min/s"
+                           : (Math.abs(rate) / 60).toFixed(1) + " h/s");
+  if (t !== noteText) { noteText = t; noteLabel.textContent = t; }
 }
 
 /* =======================================================================
@@ -2146,9 +2225,20 @@ document.addEventListener("pointerdown", e => {
   setMenu(false);
 });
 document.addEventListener("keydown", e => {
-  if (e.key !== "Escape") return;
-  if (!settings.hidden) { setMenu(false); menuBtn.focus(); }
-  else if (state.frozen != null) goLive();
+  if (e.key === "Escape") {
+    if (!settings.hidden) { setMenu(false); menuBtn.focus(); }
+    else if (state.frozen != null) goLive();
+    return;
+  }
+  // Arrows step the board an hour at a time, which is the quickest way to line
+  // up a meeting. Left alone where they already mean something: inside the
+  // time field they move the caret, inside the menu they change the setting.
+  const step = e.key === "ArrowRight" ? 1 : e.key === "ArrowLeft" ? -1 : 0;
+  if (!step || e.metaKey || e.ctrlKey || e.altKey) return;
+  if (e.target.closest && e.target.closest("input, #settings")) return;
+  e.preventDefault();
+  freezeAt((state.frozen != null ? state.frozen : currentMinute()) + step * 3600000);
+  for (const c of cards) c._wxKey = null;
 });
 
 // Clicking away from a dial or a time field returns to now. The dock and the
