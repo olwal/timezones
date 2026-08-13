@@ -1,0 +1,11 @@
+# Scratch directories used when generating screenshots headlessly
+.shot/
+.shotwork/
+
+# OS / editor noise
+Thumbs.db
+desktop.ini
+.DS_Store
+*.swp
+.vscode/
+.idea/
