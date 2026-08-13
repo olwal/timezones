@@ -34,6 +34,12 @@ board: when most of your cities are dark, so is everything else.
 
 ![The dashboard at night](docs/board-dark.png)
 
+Click any digital time and type into it to convert that moment across the whole
+board. Below, someone has proposed 14:30 their time in London: it is 06:30 in Santa
+Cruz, an hour and a half before their morning, and 22:30 in Tokyo.
+
+![Converting a time across every city](docs/convert.png)
+
 Clicking a city name opens a search over all 458 cities, each row showing its current
 local time. Same-name cities are distinguished by region, which is why `Cambridge`
 appears twice below.
@@ -81,6 +87,34 @@ Whatever is on screen is written back to the URL, so the address bar is always a
 shareable link; the copy-link button puts it on the clipboard. The same list is saved
 to `localStorage`, so a bare `index.html` reopens your last board. A `?cities=`
 parameter always wins over the saved list.
+
+## Converting a time
+
+Click any card's digital time and type into it. The whole board pauses on that
+instant and every other card reads the same moment in its own zone, which is what
+you want when someone proposes a meeting in theirs. `Esc`, or clicking away, returns
+to now and the second hand starts sweeping again.
+
+The field is forgiving about format: `14:30`, `1430`, `930`, `2.30`, `2h30`,
+`2:30pm`, `9a` and a bare `14` all work. While what you have typed is not yet a
+valid time the underline turns red and the board holds the last good instant, so it
+does not lurch around mid-keystroke.
+
+Because everything on a card is derived from a single instant, pausing on one makes
+the *whole* card describe that moment, not just the digits: the sky domes move the
+sun to where it will be, the dials take on the darkness they will have, and the
+footer counts down from then. That is how the screenshot above shows at a glance
+that the proposed time lands before Santa Cruz's working day.
+
+Two details worth knowing:
+
+- The date is anchored to the edited city's local date when you start typing, so
+  entering `00:30` after `23:30` stays on the same day instead of drifting.
+- Converting a wall-clock time to an instant cannot assume an offset, because the
+  offset in force depends on the answer. `zonedTimeToEpoch` solves it by correction
+  instead, which handles half-hour zones (Kolkata, Kathmandu, St. John's) and
+  daylight-saving changes. A local time that does not exist — 02:30 on a
+  spring-forward morning — resolves to a real adjacent instant rather than `NaN`.
 
 ## Reading a clock
 

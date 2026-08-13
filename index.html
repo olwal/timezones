@@ -193,6 +193,37 @@ body {
 .digital time {
   font-size: 26px; font-weight: 300; letter-spacing: .01em;
   font-variant-numeric: tabular-nums;
+  cursor: pointer; border-bottom: 1px dashed transparent; padding-bottom: 1px;
+}
+.digital time:hover { border-bottom-color: var(--muted); }
+
+/* Typing a time in any card converts it across every other card. */
+.tedit {
+  font: inherit; font-size: 26px; font-weight: 300; letter-spacing: .01em;
+  font-variant-numeric: tabular-nums; text-align: center;
+  width: 6.4ch; padding: 0 0 1px; margin: 0;
+  background: transparent; color: var(--fg);
+  border: 0; border-bottom: 2px solid var(--accent); border-radius: 0;
+}
+.tedit:focus { outline: none; }
+.tedit.bad { border-bottom-color: #cf3b2f; }
+.card.editing { outline: 2px solid var(--accent); outline-offset: 2px; }
+/* A stopped second hand reads as stopped, but dim it so it is unmistakable. */
+html.frozen .hand-sec { opacity: .3; }
+
+.note {
+  position: fixed; left: 50%; bottom: 26px; transform: translateX(-50%);
+  z-index: 27; display: flex; align-items: center; gap: 7px;
+  background: var(--face); color: var(--fg);
+  border: 1px solid var(--edge); border-radius: 100px;
+  padding: 8px 15px; font-size: 11px; letter-spacing: .05em;
+  box-shadow: 0 3px 10px rgba(0,0,0,.14), 0 16px 40px -22px rgba(0,0,0,.6);
+}
+.note[hidden] { display: none; }
+.note kbd {
+  font: inherit; font-size: 10px; letter-spacing: .06em;
+  border: 1px solid var(--edge); border-radius: 3px; padding: 1px 5px;
+  background: rgba(127,127,127,.12);
 }
 .digital time small { font-size: 12px; font-weight: 400; letter-spacing: .06em; margin-left: 2px; }
 .digital .rel {
@@ -370,6 +401,12 @@ body {
       <button class="btn" id="cancelBtn">Cancel</button>
     </footer>
   </div>
+</div>
+
+<div class="note" id="frozenNote" hidden>
+  <span>Converted time &mdash; clocks paused</span>
+  <kbd>Esc</kbd>
+  <span>for now</span>
 </div>
 
 <div class="toast" id="toast"></div>
@@ -1244,6 +1281,7 @@ let cards = [];
 let dragFrom = null;
 
 function buildCards() {
+  stopEdit();          // the card holding the editor is about to be replaced
   grid.textContent = "";
   cards = state.ids.map((id, i) => {
     const city = BY_ID.get(id) || BY_ID.get(DEFAULTS[0]);
@@ -1257,7 +1295,11 @@ function buildCards() {
       <svg class="clock" viewBox="${state.weather === "dial" ? "-14 -14 228 228" : "-4 -4 208 208"}"
         role="img" aria-label="Analog clock for ${city.name}">${faceSVG()}</svg>
       <div class="digital">
-        <time></time><span class="rel"></span>
+        <time title="Click to convert a time across every city"></time>
+        <input class="tedit" type="text" inputmode="text" autocomplete="off"
+          spellcheck="false" draggable="false" hidden
+          aria-label="Convert a time in ${city.name} across every city">
+        <span class="rel"></span>
       </div>
       <div class="skyband">
         <svg class="dome" viewBox="0 0 200 ${SKY.h}" aria-hidden="true">${domeSVG()}</svg>
@@ -1271,6 +1313,17 @@ function buildCards() {
       <div class="next"></div>`;
     el.querySelector(".card__name").addEventListener("click", () => openPicker(i));
     el.querySelector(".card__remove").addEventListener("click", () => removeAt(i));
+
+    // ---- click the time to convert one across every city
+    const timeEl = el.querySelector("time");
+    const editEl = el.querySelector(".tedit");
+    timeEl.addEventListener("click", () => startEdit(i));
+    editEl.addEventListener("input", () => applyTyped(i));
+    editEl.addEventListener("blur", stopEdit);
+    editEl.addEventListener("keydown", e => {
+      if (e.key === "Escape") { e.stopPropagation(); stopEdit(); }
+      else if (e.key === "Enter") { e.preventDefault(); editEl.select(); }
+    });
 
     // ---- drag to reorder
     el.draggable = true;
@@ -1303,6 +1356,7 @@ function buildCards() {
       city, el,
       meta: el.querySelector(".meta"),
       time: el.querySelector("time"),
+      tedit: el.querySelector(".tedit"),
       rel: el.querySelector(".rel"),
       rise: el.querySelector(".rise"),
       set: el.querySelector(".set"),
@@ -1396,8 +1450,10 @@ const wrapDay = v => ((v % 1440) + 1440) % 1440;
 let toolsRev = 0;   // bumped when 12/24h changes, to force a text refresh
 
 function update() {
-  const now = new Date();
-  const nowMs = now.getTime();
+  // While a time is being converted the whole board runs off that instant
+  // instead of the clock, which is what stops the hands.
+  const nowMs = state.frozen != null ? state.frozen : Date.now();
+  const now = new Date(nowMs);
   // Seconds come straight off the epoch rather than the formatted parts, so the
   // sweep is perfectly continuous and identical on every card. Every IANA zone
   // is a whole number of minutes from UTC, so seconds-of-minute are universal.
@@ -1601,6 +1657,107 @@ function wxSpan(key, temp) {
   return `<svg viewBox="0 0 16 16" aria-hidden="true">${
     `<g fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"
        stroke-linejoin="round">${WX[key]}</g>`}</svg><span>${temp}°</span>`;
+}
+
+/* =======================================================================
+   Converting a time
+
+   Click any digital read-out and the whole board pauses on that instant, so
+   a time someone quotes in their own zone can be read straight off every
+   other card. Because everything downstream keys off the same instant, the
+   sky domes, the dial darkness and the working-hours line all describe that
+   moment too, not just the digits.
+   ======================================================================= */
+let editing = null;      // index of the card being edited
+let editAnchor = null;   // that city's local date, held still while typing
+const frozenNote = document.getElementById("frozenNote");
+
+// "14:30", "1430", "930", "2.30", "2:30pm", "9a", "14" ...
+function parseTimeInput(raw) {
+  const s = raw.trim().toLowerCase().replace(/\s+/g, "");
+  if (!s) return null;
+  const suffix = /([ap])\.?m?\.?$/.exec(s);
+  const body = (suffix ? s.slice(0, suffix.index) : s).replace(/[.h]/g, ":");
+  let h, m;
+  if (body.includes(":")) {
+    const [a, b = "0"] = body.split(":");
+    if (!/^\d{1,2}$/.test(a) || !/^\d{1,2}$/.test(b)) return null;
+    h = +a; m = +b;
+  } else if (/^\d{1,2}$/.test(body)) { h = +body; m = 0; }
+  else if (/^\d{3}$/.test(body)) { h = +body[0]; m = +body.slice(1); }
+  else if (/^\d{4}$/.test(body)) { h = +body.slice(0, 2); m = +body.slice(2); }
+  else return null;
+  if (suffix) {
+    if (h < 1 || h > 12) return null;
+    h = (h % 12) + (suffix[1] === "p" ? 12 : 0);
+  }
+  if (h > 23 || m > 59) return null;
+  return { h, m };
+}
+
+// The instant at which a given zone's wall clock reads y-mo-d h:mi. Solved by
+// correction rather than by assuming an offset, since the offset in force is
+// itself a function of the answer. Two passes settle it, including across a
+// daylight-saving change.
+function zonedTimeToEpoch(tz, y, mo, d, h, mi) {
+  const target = Date.UTC(y, mo - 1, d, h, mi);
+  let guess = target;
+  for (let i = 0; i < 2; i++) {
+    const p = partsFor(tz, new Date(guess));
+    guess += target - Date.UTC(p.y, p.mo - 1, p.d, p.h, p.mi, p.s);
+  }
+  return guess;
+}
+
+const repaintAll = () => { for (const c of cards) c._rev = null; };
+
+function startEdit(i) {
+  if (editing === i) return;
+  if (editing !== null) stopEdit();
+  const c = cards[i];
+  editing = i;
+  const p = partsFor(c.city.tz, new Date());
+  editAnchor = { y: p.y, mo: p.mo, d: p.d };
+  // Freeze on the current minute so the second hand parks at twelve.
+  state.frozen = zonedTimeToEpoch(c.city.tz, p.y, p.mo, p.d, p.h, p.mi);
+  c.time.hidden = true;
+  c.tedit.hidden = false;
+  c.tedit.classList.remove("bad");
+  c.tedit.value = stamp(p.h * 60 + p.mi, state.hour12);
+  c.tedit.focus();
+  c.tedit.select();
+  c.el.classList.add("editing");
+  document.documentElement.classList.add("frozen");
+  frozenNote.hidden = false;
+  // A draggable card swallows text selection inside its own input.
+  for (const k of cards) k.el.draggable = false;
+  repaintAll();
+}
+
+function applyTyped(i) {
+  const c = cards[i];
+  const t = parseTimeInput(c.tedit.value);
+  c.tedit.classList.toggle("bad", !t);
+  if (!t) return;                     // keep the last good instant while typing
+  state.frozen = zonedTimeToEpoch(c.city.tz, editAnchor.y, editAnchor.mo, editAnchor.d, t.h, t.m);
+  repaintAll();
+}
+
+function stopEdit() {
+  if (editing === null) return;
+  const c = cards[editing];
+  editing = null;
+  editAnchor = null;
+  state.frozen = null;
+  if (c) {
+    c.tedit.hidden = true;
+    c.time.hidden = false;
+    c.el.classList.remove("editing");
+  }
+  document.documentElement.classList.remove("frozen");
+  frozenNote.hidden = true;
+  for (const k of cards) k.el.draggable = true;
+  repaintAll();
 }
 
 /* =======================================================================
