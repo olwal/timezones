@@ -1,0 +1,11 @@
+# The assets directory is the repository root, so keep everything that is for
+# the repo rather than for the site out of the deployed bundle.
+**/.git
+**/.DS_Store
+**/node_modules
+.gitignore
+.assetsignore
+.nojekyll
+wrangler.jsonc
+README.md
+docs/

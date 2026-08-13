@@ -252,6 +252,31 @@ allows browser requests. One call per city covers 72 hours; responses are cached
 
 Every setting in the menu persists to `localStorage`.
 
+## Deploying
+
+The site is static files at the repository root, so there is nothing to build.
+`wrangler.jsonc` declares an assets-only Cloudflare Worker — no script, no `main`
+entry — and `.assetsignore` keeps the repo's own files (this README, `docs/`) out of
+the deployed bundle. Keeping the config in the repo rather than only in the dashboard
+means the deploy is reviewable and reproducible.
+
+Nothing here needs server-side code today. If it ever does, an assets-only Worker
+becomes a Worker with a handler by adding one file and a `main` entry, so there is no
+migration to plan for. The candidates, in the order I would actually bother:
+
+1. **Caching the forecast at the edge.** Each visitor's browser currently fetches
+   about 1.6 KB per city straight from Open-Meteo, taking roughly 0.8 s. Caching per
+   city for 30 minutes would let all visitors share one upstream fetch, which protects
+   the free quota, speeds up first paint, and stops visitors' addresses reaching a
+   third party.
+2. **Dynamic social preview images**, rendering the actual dials for the cities in a
+   shared link. The one item here that genuinely cannot be done in the browser.
+3. **A plain-text endpoint**, so `curl timezones.cc/tokyo` answers from a terminal.
+
+Worth noting what does *not* need code: defaulting the board to the visitor's own zone
+(`Intl.DateTimeFormat().resolvedOptions().timeZone` gives it client-side), self-hosting
+Inter (commit the woff2), and analytics.
+
 ## Sun and moon calculations
 
 Sunrise and sunset are computed in-page from each city's latitude and longitude

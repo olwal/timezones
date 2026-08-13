@@ -1,0 +1,16 @@
+{
+  // Assets-only Worker: the whole site is static, so there is no script and no
+  // "main" entry. Adding one later is a file plus a "main" line, not a move to
+  // a different product.
+  //
+  // "name" must match the Worker created in the dashboard, or a deploy will
+  // make a second one alongside it.
+  "name": "timezones",
+  "compatibility_date": "2026-08-13",
+
+  // index.html sits at the repository root so the file still opens straight
+  // from disk. .assetsignore keeps the repo furniture out of the deployed site.
+  "assets": {
+    "directory": "./"
+  }
+}
