@@ -14,6 +14,9 @@ keep working.
 
 ![The dashboard in daylight](docs/board-light.png)
 
+There is no header — the board is the whole page, and the controls live in two
+floating buttons in the bottom-right: copy-link and settings.
+
 Each card carries a dial, a twelve-hour forecast ring, the local time, a sky dome
 showing where the sun is in that city's day, and a countdown to the next end of the
 working day.
@@ -32,6 +35,13 @@ local time. Same-name cities are distinguished by region — the reason `Cambrid
 appears twice below.
 
 ![Searching for a city](docs/city-picker.png)
+
+The settings menu shows every mode at once rather than hiding them behind a button
+you have to click repeatedly, and explains whichever one is selected. Two of these
+are modes rather than on/off switches, which a cycling button made impossible to
+discover.
+
+![The settings menu](docs/settings.png)
 
 The forecast can ride the sky dome instead of the dial, covering the hours left in the
 current span rather than a fixed twelve.
@@ -65,8 +75,8 @@ Massachusetts`. Same-name cities get distinct slugs (`cambridge-ma` vs `cambridg
 disambiguates any collision rather than letting one city silently overwrite another.
 
 Whatever is on screen is written back to the URL, so the address bar is always a
-shareable link (`Copy link` puts it on the clipboard). The same list is saved to
-`localStorage`, so a bare `index.html` reopens your last board. A `?cities=`
+shareable link — the copy-link button puts it on the clipboard. The same list is saved
+to `localStorage`, so a bare `index.html` reopens your last board. A `?cities=`
 parameter always wins over the saved list.
 
 ## Reading a clock
@@ -93,21 +103,21 @@ parameter always wins over the saved list.
   the same grey as the dial and disappeared, so they step from black to white
   instead. Black on mid-grey is roughly 5:1 and white on mid-grey roughly 4:1, so
   both halves of the fade stay readable.
-- **`Hours` / `Solar` chooses what darkness means.** `Hours` (the default) uses the
-  fixed evening window in `CONFIG`, fading over 45 minutes either side — every city
-  behaves the same, which makes the board easy to scan. `Solar` uses the sun's true
-  altitude, fading across civil twilight, so high latitudes look right:
+- **Dark clock face** decides what darkness means. *Working hours* (the default) uses
+  the fixed evening window in `CONFIG`, fading over 45 minutes either side — every
+  city behaves the same, which makes the board easy to scan. *Real sun* uses the
+  sun's true altitude, fading across civil twilight, so high latitudes look right:
 
   ```
   Stockholm, one character per hour, '.' = white face, '#' = black
-  jun21/hours:  ######+.............+###
-  jun21/solar:  ###*..................:*     sunrise 03:32, sunset 22:09
-  dec21/hours:  ######+.............+###
-  dec21/solar:  #########:.....+########     sunrise 08:44, sunset 14:49
+  jun21/working hours:  ######+.............+###
+  jun21/real sun:       ###*..................:*     sunrise 03:32, sunset 22:09
+  dec21/working hours:  ######+.............+###
+  dec21/real sun:       #########:.....+########     sunrise 08:44, sunset 14:49
   ```
 
-  The page background follows the majority of the board while the theme button is
-  on `Auto`.
+  The page background follows the majority of the board while *Page theme* is on
+  *Auto*.
 - **One quiet line at the foot** counts down to whichever end of the working day
   comes round next — `11h 57m till morning 08:00`, or `57m till evening 18:00` if
   that is sooner.
@@ -128,18 +138,18 @@ const CONFIG = {
 };
 ```
 
-In `Hours` mode the dark face is deliberately on fixed hours while the sun and moon
+On *Working hours* the dark face is deliberately on fixed hours while the sun and moon
 follow real astronomy, so the two can legitimately disagree: Tokyo at 05:21 shows a
 black face with the sun already up on the dome, which is exactly the situation you
-want to see before scheduling a call there. `Solar` mode removes that disagreement
-at the cost of every city behaving differently.
+want to see before scheduling a call there. *Real sun* removes that disagreement at
+the cost of every city behaving differently.
 
 ## Weather
 
-The `Weather` button cycles three placements. Both draw current conditions and
-temperature in the middle of the label row.
+Three placements, all of which draw current conditions and temperature in the middle
+of the label row.
 
-**`dial` (default)** — twelve icons in a ring outside the dial, one per hour for the
+**Dial (default)** — twelve icons in a ring outside the dial, one per hour for the
 next twelve hours. The analog face already maps hours to angles, so each forecast
 hour sits at its own hour position and the ring reads clockwise from the hour hand.
 The angle comes from that hour's local wall-clock time rather than a slot index, so
@@ -147,21 +157,20 @@ half-hour zones like Kolkata and Kathmandu land correctly between marks. Opacity
 falls off with distance in time, which shows the reading direction and keeps the ring
 from being ambiguous about which icon is the next hour.
 
-**`dome`** — icons along the sky dome for the hours remaining in the current span:
+**Dome** — icons along the sky dome for the hours remaining in the current span:
 now until sunset by day, now until sunrise by night. Spaced by distance along the
 arc rather than by clock hour, because `skyX` is a cosine that barely moves near
 sunrise and sunset while the hours keep passing, so every-Nth-hour piles them into a
 heap at the ends. The trade-off is that a span with little arc left shows fewer
 icons — late afternoon might only fit two before sunset.
 
-**`off`** — no forecast, no requests, and the dial gets a slightly roomier viewBox.
+**Off** — no forecast, no requests, and the dial gets a slightly roomier viewBox.
 
 Data comes from [Open-Meteo](https://open-meteo.com), which needs no API key and
 allows browser requests. One call per city covers 72 hours; responses are cached in
 `localStorage` for 30 minutes. If the request fails, the icons simply don't appear.
 
-The `24h` button toggles 12/24-hour display; `Auto` cycles the page theme through
-auto → light → dark. Both preferences persist locally.
+Every setting in the menu persists to `localStorage`.
 
 ## Sun and moon calculations
 
