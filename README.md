@@ -1,6 +1,6 @@
 # Timezones
 
-**[olwal.github.io/timezones](https://olwal.github.io/timezones/)**
+**[timezones.cc](https://timezones.cc/)**
 
 A dashboard of minimal analog clocks for cities around the world: high-contrast
 dials, fine minute ticks, flat hands and a yellow sweep second hand.
