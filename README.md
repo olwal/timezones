@@ -2,7 +2,8 @@
 
 **[olwal.github.io/timezones](https://olwal.github.io/timezones/)**
 
-A dashboard of Braun-style analog clocks for cities around the world.
+A dashboard of minimal analog clocks for cities around the world: high-contrast
+dials, fine minute ticks, flat hands and a yellow sweep second hand.
 
 Everything lives in one `index.html`: no build step, no dependencies, no framework.
 Open it from disk or host it as a static file.

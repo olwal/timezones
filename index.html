@@ -417,6 +417,7 @@ html.frozen .hand-sec { opacity: .3; }
       <button type="button" role="radio" data-val="light">Light</button>
       <button type="button" role="radio" data-val="dark">Dark</button>
     </div>
+    <p class="hint" id="hint-theme"></p>
   </section>
 </div>
 
@@ -1549,15 +1550,17 @@ function update() {
   // sweep is perfectly continuous and identical on every card. Every IANA zone
   // is a whole number of minutes from UTC, so seconds-of-minute are universal.
   const secs = (nowMs % 60000) / 1000;
+  const spun = spinning();
   const viewer = partsFor(viewerTz, now);
   const viewerDay = Date.UTC(viewer.y, viewer.mo - 1, viewer.d);
-  let nightCount = 0;
 
   for (const c of cards) {
     const p = partsFor(c.city.tz, now);
 
-    // ---- hands: all three drift continuously; the second hand floats, never ticks
-    c.secHand.setAttribute("transform", `rotate(${secs * 6} ${CX} ${CY})`);
+    // ---- hands: all three drift continuously; the second hand floats, never ticks.
+    // Mid-spin it is parked: at these rates it would whip round several times a
+    // second, which reads as a jitter rather than as motion.
+    c.secHand.setAttribute("transform", `rotate(${spun ? 0 : secs * 6} ${CX} ${CY})`);
     c.minHand.setAttribute("transform", `rotate(${(p.mi + secs / 60) * 6} ${CX} ${CY})`);
     c.hourHand.setAttribute("transform", `rotate(${((p.h % 12) + p.mi / 60 + secs / 3600) * 30} ${CX} ${CY})`);
 
@@ -1572,7 +1575,6 @@ function update() {
       c._rev = rev;
       paintSlow(c, p, nowMs, viewerDay);
     }
-    if (c._isNight) nightCount++;
 
     // ---- the sun (or moon) creeps across the dome in real time
     const t = Math.min(1, Math.max(0, (nowMs - c._spanFrom) / (c._spanTo - c._spanFrom)));
@@ -1580,9 +1582,17 @@ function update() {
       `translate(${skyX(t).toFixed(2)} ${skyY(t, c._sunUp).toFixed(2)})`);
   }
 
-  // ---- page skin follows the majority of the board when on auto
+  // ---- page skin: on auto, it follows night where the viewer is
+  // This used to be a majority vote of the cards on screen, which drifted with
+  // no visible cause: adding a city or one card crossing dusk could flip the
+  // whole page. Tying it to the viewer's own evening makes it predictable, and
+  // it stops depending on which cities happen to be on the board.
+  // Deliberately the real local time, not the paused one: the page is the shell
+  // around the board, and having it strobe light and dark while time is being
+  // wound through evenings is worse than having it sit still.
+  const here = state.frozen == null ? viewer : partsFor(viewerTz, new Date());
   const dark = state.theme === "dark" ||
-    (state.theme === "auto" && cards.length > 0 && nightCount * 2 > cards.length);
+    (state.theme === "auto" && isNight(here.minutes));
   document.documentElement.classList.toggle("dark", dark);
 
   requestAnimationFrame(update);
@@ -1921,8 +1931,9 @@ const spinning = () => !!(scrub && scrub.armed && scrub.mode === "spin" && scrub
 
 // Minutes of clock time per real second, from how far the pointer has been
 // pulled. Squared so the near end stays controllable while the far end still
-// covers days: about 1.6 min/s just outside the dead zone, up to 4 h/s.
-const SPIN = { dead: 6, gain: 1.6, max: 240, arm: 4 };
+// covers a day in a couple of seconds: about 0.8 min/s just outside the dead
+// zone, up to 2 h/s at full stretch.
+const SPIN = { dead: 6, gain: 0.8, max: 120, arm: 4 };
 function spinRate(dx) {
   const pull = Math.abs(dx) - SPIN.dead;
   if (pull <= 0) return 0;
@@ -2162,6 +2173,10 @@ function syncTools() {
   document.getElementById("hint-solar").textContent = HINTS.solar[settingValue("solar")];
   document.getElementById("hint-weather").textContent = HINTS.weather[state.weather];
   document.getElementById("hint-ring").textContent = HINTS.ring[state.ring];
+  document.getElementById("hint-theme").textContent = state.theme === "auto"
+    ? `Dark between ${stamp(CONFIG.nightFrom, state.hour12)} and ` +
+      `${stamp(CONFIG.nightTo, state.hour12)} where you are.`
+    : "";
   // The ring only exists in dial mode; dim rather than hide, so it stays findable.
   document.getElementById("sec-ring").classList.toggle("muted", state.weather !== "dial");
 }
