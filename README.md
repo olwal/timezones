@@ -21,6 +21,12 @@ Each card carries a dial, a twelve-hour forecast ring, the local time, a sky dom
 showing where the sun is in that city's day, and a countdown to the next end of the
 working day.
 
+<img src="docs/second-hand.gif" width="420" alt="The second hand sweeping smoothly">
+
+The second hand floats. It is a continuous sweep at real speed, not a once-a-second
+tick — measured off the dial, it moves 1.5° every quarter second rather than jumping
+6° and sitting still.
+
 ![Day, dusk and night side by side](docs/card-detail.png)
 
 Tokyo in full daylight, Delhi mid-fade at 06:10, London at night. The dial darkens
