@@ -73,9 +73,13 @@ Unrecognised tokens are dropped.
 tile to append one. Search by city, region, country or time zone; arrow keys and
 Enter work.
 
-**Reordering**: drag a card onto another to drop it into that position. The new
+**Reordering**: drag a card and a caret appears in the gutter showing exactly where
+it will land — the near half of a card means before it, the far half means after it.
+No caret appears where the drop would put the card back where it started. The new
 order is saved and written back to the URL. This uses HTML5 drag-and-drop, so it is
 mouse and trackpad only; touch dragging is not supported.
+
+![The drop caret during a reorder](docs/drag-caret.png)
 
 Where a state or province is the more useful label the card shows that instead of the
 country (`Santa Cruz / California`, `Cambridge / Massachusetts`). Same-name cities get
@@ -99,6 +103,12 @@ The field is forgiving about format: `14:30`, `1430`, `930`, `2.30`, `2h30`,
 `2:30pm`, `9a` and a bare `14` all work. While what you have typed is not yet a
 valid time the underline turns red and the board holds the last good instant, so it
 does not lurch around mid-keystroke.
+
+**Or wind it by hand.** Drag any dial and time turns with it: six degrees is one
+minute, so a full turn is an hour and the minute hand tracks the pointer. Turns
+accumulate, so going round again keeps winding forward. Letting go leaves the board
+paused where you left it, so you can wind again from there as many times as you
+like. `Esc` or a click away returns to now.
 
 Because everything on a card is derived from a single instant, pausing on one makes
 the *whole* card describe that moment, not just the digits: the sky domes move the
@@ -185,13 +195,32 @@ every city behaving differently.
 Three placements, all of which draw current conditions and temperature in the middle
 of the label row.
 
-**Dial (default)**: twelve icons in a ring outside the dial, one per hour for the
-next twelve hours. The analog face already maps hours to angles, so each forecast
-hour sits at its own hour position and the ring reads clockwise from the hour hand.
-The angle comes from that hour's local wall-clock time rather than a slot index, so
-half-hour zones like Kolkata and Kathmandu land correctly between marks. Opacity
-falls off with distance in time, which shows the reading direction and keeps the ring
-from being ambiguous about which icon is the next hour.
+**Dial (default)**: a ring outside the dial, one entry per coming hour. The analog
+face already maps hours to angles, so each forecast hour sits at its own hour
+position and the ring reads clockwise from the hour hand. The angle comes from that
+hour's local wall-clock time rather than a slot index, so half-hour zones like
+Kolkata and Kathmandu land correctly between marks. Opacity falls off with distance
+in time, giving the reading direction.
+
+The ring shows **eleven** hours, not twelve, and that is deliberate. Twelve hours is
+a full turn of this dial, so the twelfth entry lands on exactly the same angle as the
+current hour. That closed the ring into a seamless circle, with the faintest entry
+sitting under the hour hand right beside the strongest — nothing to read it from, and
+the whole ring appeared to shuffle arbitrarily whenever the time changed. Stopping one
+short leaves a gap at the current hour: the gap is now, and the ring reads clockwise
+from it.
+
+**Dial ring** chooses what the ring carries: `Icons`, `Temps`, or `Both` —
+temperatures on an outer ring with conditions on an inner one. The viewBox opens up
+to fit whichever is shown, allowing for the width of the labels as well as the radius
+of the ring, since a reading like `-10°` at the three o'clock position otherwise
+overhangs the box and gets clipped.
+
+![Temperatures and conditions on two rings](docs/ring-both.png)
+
+**Temperature** switches between `°C` and `°F`. Open-Meteo is asked for Celsius and
+the conversion happens locally, so switching units costs no request and never
+invalidates the cache.
 
 **Dome**: icons along the sky dome for the hours remaining in the current span, now
 until sunset by day, now until sunrise by night. Spaced by distance along the arc

@@ -100,6 +100,10 @@ body {
   letter-spacing: .14em; text-transform: uppercase; color: var(--muted);
 }
 .hint { margin: 7px 0 0; font-size: 10.5px; line-height: 1.5; color: var(--muted); }
+.popover section.muted { opacity: .45; }
+/* The dial is grabbable for winding time. */
+.clock { cursor: grab; touch-action: none; }
+.clock:active { cursor: grabbing; }
 
 /* Segmented control: every mode visible at once, rather than a button you
    have to click repeatedly to discover what it cycles through. */
@@ -155,7 +159,14 @@ body {
   box-shadow: 0 1px 2px rgba(0,0,0,.10), 0 8px 24px -18px rgba(0,0,0,.5);
 }
 .card.dragging { opacity: .35; }
-.card.drop-into { outline: 2px solid var(--accent); outline-offset: 2px; }
+/* A caret in the gutter shows where the card will land, rather than
+   highlighting a card and leaving before-or-after ambiguous. */
+.card.drop-before::before, .card.drop-after::after {
+  content: ""; position: absolute; top: 2px; bottom: 2px; width: 3px;
+  background: var(--accent); border-radius: 3px;
+}
+.card.drop-before::before { left: -11px; }
+.card.drop-after::after { right: -11px; }
 
 .card__name {
   font: inherit; color: inherit; background: none; border: 0; cursor: pointer;
@@ -378,6 +389,22 @@ html.frozen .hand-sec { opacity: .3; }
       <button type="button" role="radio" data-val="off">Off</button>
     </div>
     <p class="hint" id="hint-weather"></p>
+  </section>
+  <section id="sec-ring">
+    <h2>Dial ring</h2>
+    <div class="seg" role="radiogroup" aria-label="Dial ring" data-group="ring">
+      <button type="button" role="radio" data-val="icons">Icons</button>
+      <button type="button" role="radio" data-val="temps">Temps</button>
+      <button type="button" role="radio" data-val="both">Both</button>
+    </div>
+    <p class="hint" id="hint-ring"></p>
+  </section>
+  <section>
+    <h2>Temperature</h2>
+    <div class="seg" role="radiogroup" aria-label="Temperature unit" data-group="units">
+      <button type="button" role="radio" data-val="c">&deg;C</button>
+      <button type="button" role="radio" data-val="f">&deg;F</button>
+    </div>
   </section>
   <section>
     <h2>Page theme</h2>
@@ -1021,7 +1048,9 @@ const LS = {
   hour12: "worldclock.hour12",
   theme: "worldclock.theme",
   solar: "worldclock.solar",
-  weather: "worldclock.weather"
+  weather: "worldclock.weather",
+  ring: "worldclock.ring",
+  units: "worldclock.units"
 };
 const store = {
   get(k, fb) { try { const v = localStorage.getItem(k); return v === null ? fb : v; } catch { return fb; } },
@@ -1047,9 +1076,18 @@ let state = {
   hour12: store.get(LS.hour12, "0") === "1",
   theme: store.get(LS.theme, "auto"),      // auto | light | dark
   solar: store.get(LS.solar, "0") === "1", // false = fixed evening hours
-  weather: store.get(LS.weather, "dial")   // dial | dome | off
+  weather: store.get(LS.weather, "dial"),  // dial | dome | off
+  ring: store.get(LS.ring, "icons"),       // icons | temps | both
+  units: store.get(LS.units, "c")          // c | f
 };
 if (!["dial", "dome", "off"].includes(state.weather)) state.weather = "dial";
+if (!["icons", "temps", "both"].includes(state.ring)) state.ring = "icons";
+if (!["c", "f"].includes(state.units)) state.units = "c";
+
+// Open-Meteo is asked for Celsius and the conversion happens here, so switching
+// units costs nothing and never invalidates the cache.
+const fmtTemp = c =>
+  (state.units === "f" ? Math.round(c * 9 / 5 + 32) : Math.round(c)) + "°";
 
 if (urlCities) state.ids = parseIds(urlCities);
 if (!state.ids.length) state.ids = parseIds(store.get(LS.cities, ""));
@@ -1128,7 +1166,7 @@ const WX_TEXT = {
 // Draw an icon centred on (x, y) at the given scale, in SVG user units.
 function wxGlyph(key, x, y, scale, colour, title, opacity) {
   const s = (scale / 16).toFixed(4);
-  return `<g transform="translate(${x.toFixed(1)} ${y.toFixed(1)}) scale(${s}) translate(-8 -8)"
+  return `<g class="wx-ico" transform="translate(${x.toFixed(1)} ${y.toFixed(1)}) scale(${s}) translate(-8 -8)"
     fill="none" stroke="${colour}" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"
     ${opacity == null ? "" : `opacity="${opacity.toFixed(2)}"`}>
     ${title ? `<title>${title}</title>` : ""}${WX[key]}</g>`;
@@ -1238,7 +1276,27 @@ function domeSVG() {
 }
 
 const DIAL = 92;      // dial disc radius
-const WXRING = 105;   // where the hourly forecast icons sit, outside the dial
+const WXRING = 105;   // where a single forecast ring sits, outside the dial
+
+/* The viewBox has to open up to make room for whatever rings are drawn, and
+   stays centred on the dial so a drag can find the centre from the element box
+   alone. The pixel width grows with it, so the dial itself renders at roughly
+   the same size whichever rings are on; width:100% still caps it to the card. */
+const TEMP_RING = 121, ICON_RING_BOTH = 101;
+
+function clockBox() {
+  // Room for the ring plus whatever sits on it. Temperature labels are wide:
+  // a four-character reading like -10° needs about 13 units either side of its
+  // centre, and at the three and nine o'clock positions that overhangs the box
+  // and gets clipped.
+  const half = state.weather !== "dial" ? 104
+    : state.ring === "both" ? TEMP_RING + 14
+    : state.ring === "temps" ? WXRING + 14
+    : 113;
+  const span = half * 2;
+  return { box: `${100 - half} ${100 - half} ${span} ${span}`,
+           px: Math.round(span * (218 / 226)) };
+}
 
 function faceSVG() {
   let ticks = "";
@@ -1280,6 +1338,21 @@ const grid = document.getElementById("grid");
 let cards = [];
 let dragFrom = null;
 
+// Which slot the dragged card would land in: the near half of a card means
+// before it, the far half means after it.
+const insertIndex = (el, i, clientX) => {
+  const r = el.getBoundingClientRect();
+  return i + (clientX > r.left + r.width / 2 ? 1 : 0);
+};
+const clearDropMarks = () => {
+  for (const c of cards) c.el.classList.remove("drop-before", "drop-after");
+};
+function endDrag() {
+  clearDropMarks();
+  for (const c of cards) c.el.classList.remove("dragging");
+  dragFrom = null;
+}
+
 function buildCards() {
   stopEdit();          // the card holding the editor is about to be replaced
   grid.textContent = "";
@@ -1292,7 +1365,7 @@ function buildCards() {
       <button class="card__name" title="Change city">
         <b>${city.name}</b><span class="meta"></span>
       </button>
-      <svg class="clock" viewBox="${state.weather === "dial" ? "-14 -14 228 228" : "-4 -4 208 208"}"
+      <svg class="clock" viewBox="${clockBox().box}" style="max-width:${clockBox().px}px"
         role="img" aria-label="Analog clock for ${city.name}">${faceSVG()}</svg>
       <div class="digital">
         <time title="Click to convert a time across every city"></time>
@@ -1319,11 +1392,19 @@ function buildCards() {
     const editEl = el.querySelector(".tedit");
     timeEl.addEventListener("click", () => startEdit(i));
     editEl.addEventListener("input", () => applyTyped(i));
-    editEl.addEventListener("blur", stopEdit);
+    editEl.addEventListener("blur", () => { if (!scrub) stopEdit(); });
     editEl.addEventListener("keydown", e => {
-      if (e.key === "Escape") { e.stopPropagation(); stopEdit(); }
+      if (e.key === "Escape") { e.stopPropagation(); goLive(); }
       else if (e.key === "Enter") { e.preventDefault(); editEl.select(); }
     });
+
+    // ---- drag the dial to wind time forwards or back
+    const clockEl = el.querySelector(".clock");
+    clockEl.addEventListener("pointerdown", e => scrubStart(i, clockEl, e));
+    clockEl.addEventListener("pointermove", scrubMove);
+    clockEl.addEventListener("pointerup", scrubEnd);
+    clockEl.addEventListener("pointercancel", scrubEnd);
+    clockEl.addEventListener("dragstart", e => e.preventDefault());
 
     // ---- drag to reorder
     el.draggable = true;
@@ -1333,23 +1414,26 @@ function buildCards() {
       e.dataTransfer.setData("text/plain", city.id);
       el.classList.add("dragging");
     });
-    el.addEventListener("dragend", () => {
-      el.classList.remove("dragging");
-      for (const o of cards) o.el.classList.remove("drop-into");
-      dragFrom = null;
-    });
+    el.addEventListener("dragend", endDrag);
     el.addEventListener("dragover", e => {
-      if (dragFrom === null || dragFrom === i) return;
+      if (dragFrom === null) return;
       e.preventDefault();
       e.dataTransfer.dropEffect = "move";
-      el.classList.add("drop-into");
+      const at = insertIndex(el, i, e.clientX);
+      clearDropMarks();
+      // No caret where the drop would put the card back where it started.
+      if (at !== dragFrom && at !== dragFrom + 1) {
+        el.classList.add(at > i ? "drop-after" : "drop-before");
+      }
     });
-    el.addEventListener("dragleave", () => el.classList.remove("drop-into"));
+    el.addEventListener("dragleave", () => {
+      el.classList.remove("drop-before", "drop-after");
+    });
     el.addEventListener("drop", e => {
       e.preventDefault();
-      el.classList.remove("drop-into");
-      if (dragFrom === null || dragFrom === i) return;
-      moveCard(dragFrom, i);
+      clearDropMarks();
+      if (dragFrom === null) return;
+      moveCard(dragFrom, insertIndex(el, i, e.clientX));
     });
     grid.appendChild(el);
     return {
@@ -1584,16 +1668,14 @@ function paintWeather(c, nowMs, sunUp) {
   if (!data) return;
 
   const hour = Math.floor(nowMs / 3600000);
-  const key = state.weather + "|" + hour + "|" + Math.round(c._spanTo / 60000) +
-              "|" + sunUp + "|" + data.at;
+  const key = state.weather + "|" + state.ring + "|" + state.units + "|" + hour +
+              "|" + Math.round(c._spanTo / 60000) + "|" + sunUp + "|" + data.at;
   if (c._wxKey === key) return;
   c._wxKey = key;
 
   // Current conditions go in the middle of the sunrise/sunset row either way.
   const nowRow = data.rows.find(r => r[0] > nowMs - 3600000 && r[0] <= nowMs + 1800000);
-  c.wxNow.innerHTML = nowRow
-    ? wxSpan(wxIcon(nowRow[1], sunUp), Math.round(nowRow[2]))
-    : "";
+  c.wxNow.innerHTML = nowRow ? wxSpan(wxIcon(nowRow[1], sunUp), fmtTemp(nowRow[2])) : "";
 
   if (state.weather === "dial") {
     c.wx.textContent = "";
@@ -1630,33 +1712,57 @@ function paintWeather(c, nowMs, sunUp) {
   c.wx.style.opacity = ".5";
 }
 
-/* The next twelve hours, one icon per hour, arranged outside the dial. The
-   analog face already maps hours to angles, so each forecast hour lands on its
-   own hour position — including on the half-hour zones, since the angle comes
-   from that hour's local wall-clock time rather than from a slot index.
-   Opacity falls away with distance in time, which shows the reading direction
-   and stops the ring being ambiguous about which icon is the next hour. */
+/* The coming hours arranged outside the dial, as icons, temperatures or both.
+   The analog face already maps hours to angles, so each forecast hour lands on
+   its own hour position — including in the half-hour zones, since the angle
+   comes from that hour's local wall-clock time rather than from a slot index.
+   Opacity falls away with distance in time, which gives the reading direction.
+
+   Eleven hours, not twelve. The twelfth lands on exactly the same angle as the
+   current hour, because twelve hours is a full turn of this dial. That closed
+   the ring into a seamless circle with the faintest icon sitting under the hour
+   hand next to the strongest, so there was nothing to read it from and the
+   whole ring looked like it shuffled arbitrarily whenever the time changed.
+   Stopping one short leaves a deliberate gap at the current hour: the gap is
+   now, and the ring reads clockwise from it. */
+const RING_HOURS = 11;
+
 function paintDialRing(c, nowMs, data) {
-  const rows = data.rows.filter(r => r[0] > nowMs && r[0] <= nowMs + 12 * 3600000);
-  c.wxRing.innerHTML = rows.map((row, i) => {
+  const rows = data.rows.filter(r => r[0] > nowMs).slice(0, RING_HOURS);
+  const both = state.ring === "both";
+  const iconR = both ? ICON_RING_BOTH : WXRING;
+  const tempR = both ? TEMP_RING : WXRING;
+  const out = [];
+  rows.forEach((row, i) => {
     const [ts, code, temp] = row;
-    const at = new Date(ts);
-    const p2 = partsFor(c.city.tz, at);
+    const p2 = partsFor(c.city.tz, new Date(ts));
     const sun2 = sunFor(c.city, p2);
     const up = sun2.polar ? sun2.polar === "day" : (ts >= sun2.sunrise && ts < sun2.sunset);
     const angle = ((p2.minutes % 720) / 720) * 360;
-    const [x, y] = pol(WXRING, angle);
     const key = wxIcon(code, up);
-    const label = `${stamp(p2.minutes, state.hour12)} · ${WX_TEXT[key]}, ${Math.round(temp)}°`;
-    return wxGlyph(key, x, y, 15, "currentColor", label,
-                   0.8 - 0.45 * (i / Math.max(1, rows.length - 1)));
-  }).join("");
+    const op = 0.8 - 0.45 * (i / Math.max(1, rows.length - 1));
+    const label = `${stamp(p2.minutes, state.hour12)} · ${WX_TEXT[key]}, ${fmtTemp(temp)}`;
+    if (state.ring !== "temps") {
+      const [x, y] = pol(iconR, angle);
+      out.push(wxGlyph(key, x, y, both ? 14 : 15, "currentColor", label, op));
+    }
+    if (state.ring !== "icons") {
+      const [x, y] = pol(tempR, angle);
+      // The title goes on a wrapper, not inside the text: as a child of <text>
+      // it lands in textContent and the temperature gets read out twice.
+      out.push(`<g class="wx-temp" opacity="${op.toFixed(2)}"><title>${label}</title>
+        <text x="${x.toFixed(1)}" y="${y.toFixed(1)}" text-anchor="middle"
+          dominant-baseline="central" font-size="11.5" font-weight="500"
+          fill="currentColor">${fmtTemp(temp)}</text></g>`);
+    }
+  });
+  c.wxRing.innerHTML = out.join("");
 }
 
-function wxSpan(key, temp) {
+function wxSpan(key, label) {
   return `<svg viewBox="0 0 16 16" aria-hidden="true">${
     `<g fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"
-       stroke-linejoin="round">${WX[key]}</g>`}</svg><span>${temp}°</span>`;
+       stroke-linejoin="round">${WX[key]}</g>`}</svg><span>${label}</span>`;
 }
 
 /* =======================================================================
@@ -1711,15 +1817,54 @@ function zonedTimeToEpoch(tz, y, mo, d, h, mi) {
 
 const repaintAll = () => { for (const c of cards) c._rev = null; };
 
+// The board is paused whenever state.frozen is set, whichever way it got there:
+// typing a time, or dragging a dial. Both entry points share this so a gesture
+// that starts while the other is active does not drop the pause on the floor.
+function freezeAt(ms) {
+  state.frozen = ms;
+  document.documentElement.classList.add("frozen");
+  frozenNote.hidden = false;
+  repaintAll();
+}
+
+// Truncate to the minute so the second hand parks exactly at twelve.
+const currentMinute = () => Math.floor(Date.now() / 60000) * 60000;
+
+function closeEditor(keepFrozen) {
+  if (editing !== null) {
+    const c = cards[editing];
+    if (c) {
+      c.tedit.hidden = true;
+      c.time.hidden = false;
+      c.el.classList.remove("editing");
+    }
+    editing = null;
+    editAnchor = null;
+    for (const k of cards) k.el.draggable = true;
+  }
+  if (!keepFrozen) goLive();
+}
+
+function goLive() {
+  closeEditor(true);
+  scrub = null;
+  state.frozen = null;
+  document.documentElement.classList.remove("frozen");
+  frozenNote.hidden = true;
+  for (const k of cards) k.el.draggable = true;
+  repaintAll();
+}
+const stopEdit = () => closeEditor(false);
+
 function startEdit(i) {
   if (editing === i) return;
-  if (editing !== null) stopEdit();
+  closeEditor(true);
   const c = cards[i];
   editing = i;
-  const p = partsFor(c.city.tz, new Date());
+  const base = state.frozen != null ? state.frozen : currentMinute();
+  const p = partsFor(c.city.tz, new Date(base));
   editAnchor = { y: p.y, mo: p.mo, d: p.d };
-  // Freeze on the current minute so the second hand parks at twelve.
-  state.frozen = zonedTimeToEpoch(c.city.tz, p.y, p.mo, p.d, p.h, p.mi);
+  freezeAt(zonedTimeToEpoch(c.city.tz, p.y, p.mo, p.d, p.h, p.mi));
   c.time.hidden = true;
   c.tedit.hidden = false;
   c.tedit.classList.remove("bad");
@@ -1727,11 +1872,8 @@ function startEdit(i) {
   c.tedit.focus();
   c.tedit.select();
   c.el.classList.add("editing");
-  document.documentElement.classList.add("frozen");
-  frozenNote.hidden = false;
   // A draggable card swallows text selection inside its own input.
   for (const k of cards) k.el.draggable = false;
-  repaintAll();
 }
 
 function applyTyped(i) {
@@ -1739,25 +1881,52 @@ function applyTyped(i) {
   const t = parseTimeInput(c.tedit.value);
   c.tedit.classList.toggle("bad", !t);
   if (!t) return;                     // keep the last good instant while typing
-  state.frozen = zonedTimeToEpoch(c.city.tz, editAnchor.y, editAnchor.mo, editAnchor.d, t.h, t.m);
-  repaintAll();
+  freezeAt(zonedTimeToEpoch(c.city.tz, editAnchor.y, editAnchor.mo, editAnchor.d, t.h, t.m));
 }
 
-function stopEdit() {
-  if (editing === null) return;
-  const c = cards[editing];
-  editing = null;
-  editAnchor = null;
-  state.frozen = null;
-  if (c) {
-    c.tedit.hidden = true;
-    c.time.hidden = false;
-    c.el.classList.remove("editing");
-  }
-  document.documentElement.classList.remove("frozen");
-  frozenNote.hidden = true;
-  for (const k of cards) k.el.draggable = true;
-  repaintAll();
+/* -----------------------------------------------------------------------
+   Winding the clocks by dragging a dial
+
+   Rotation maps to the minute hand it sits under: six degrees is one minute,
+   so a full turn is an hour and the hand tracks the pointer. Turns accumulate,
+   so winding on round after round keeps going forwards. Releasing leaves the
+   board paused, which is what makes it repeatable.
+   ----------------------------------------------------------------------- */
+let scrub = null;
+
+const dialAngle = (el, x, y) => {
+  const r = el.getBoundingClientRect();
+  // Every viewBox is centred on the dial, so the element's centre is the pivot.
+  return Math.atan2(x - (r.left + r.width / 2),
+                    (r.top + r.height / 2) - y) * 180 / Math.PI;
+};
+
+function scrubStart(i, el, e) {
+  if (e.button !== undefined && e.button !== 0) return;
+  e.preventDefault();
+  closeEditor(true);                  // keep any typed instant as the base
+  const base = state.frozen != null ? state.frozen : currentMinute();
+  scrub = { el, base, last: dialAngle(el, e.clientX, e.clientY), turned: 0 };
+  freezeAt(base);
+  // Winding must not also start an HTML5 card drag.
+  for (const k of cards) k.el.draggable = false;
+  try { el.setPointerCapture(e.pointerId); } catch {}
+}
+
+function scrubMove(e) {
+  if (!scrub) return;
+  const a = dialAngle(scrub.el, e.clientX, e.clientY);
+  let d = a - scrub.last;
+  if (d > 180) d -= 360; else if (d < -180) d += 360;
+  scrub.turned += d;
+  scrub.last = a;
+  freezeAt(scrub.base + Math.round(scrub.turned / 6) * 60000);
+}
+
+function scrubEnd() {
+  if (!scrub) return;
+  scrub = null;
+  for (const k of cards) k.el.draggable = true;   // stays paused, just not winding
 }
 
 /* =======================================================================
@@ -1772,9 +1941,11 @@ function setAt(i, id) {
   if (i < 0) state.ids.push(id); else state.ids[i] = id;
   persist(); buildCards();
 }
-function moveCard(from, to) {
+// insertAt is a slot in the list as it stands now, so pulling the card out
+// first shifts every later slot down by one.
+function moveCard(from, insertAt) {
   const [id] = state.ids.splice(from, 1);
-  state.ids.splice(to, 0, id);
+  state.ids.splice(insertAt > from ? insertAt - 1 : insertAt, 0, id);
   persist(); buildCards();
 }
 
@@ -1882,16 +2053,23 @@ const HINTS = {
     "1": "Each city darkens at its own dusk, following the real sun. Correct at high latitudes."
   },
   weather: {
-    dial: "The next 12 hours, one icon per hour, around the outside of the dial.",
+    dial: "The coming hours, one per hour, around the outside of the dial.",
     dome: "The hours left in the current day or night, along the sky dome.",
     off: "No forecast, and no requests to the weather service."
+  },
+  ring: {
+    icons: "Conditions only. The gap in the ring is the current hour; it reads clockwise from there.",
+    temps: "Temperatures only, at each hour position.",
+    both: "Temperatures on an outer ring, conditions on an inner one."
   }
 };
 
 const settingValue = group =>
   group === "hour12" ? (state.hour12 ? "1" : "0") :
   group === "solar" ? (state.solar ? "1" : "0") :
-  group === "weather" ? state.weather : state.theme;
+  group === "weather" ? state.weather :
+  group === "ring" ? state.ring :
+  group === "units" ? state.units : state.theme;
 
 function syncTools() {
   for (const seg of settings.querySelectorAll(".seg")) {
@@ -1904,6 +2082,9 @@ function syncTools() {
   }
   document.getElementById("hint-solar").textContent = HINTS.solar[settingValue("solar")];
   document.getElementById("hint-weather").textContent = HINTS.weather[state.weather];
+  document.getElementById("hint-ring").textContent = HINTS.ring[state.ring];
+  // The ring only exists in dial mode; dim rather than hide, so it stays findable.
+  document.getElementById("sec-ring").classList.toggle("muted", state.weather !== "dial");
 }
 
 function applySetting(group, val) {
@@ -1916,12 +2097,17 @@ function applySetting(group, val) {
     state.solar = val === "1";
     store.set(LS.solar, val);
     for (const c of cards) c._k = undefined;    // repaint the dials at once
-  } else if (group === "weather") {
-    state.weather = val;
-    store.set(LS.weather, val);
+  } else if (group === "weather" || group === "ring") {
+    state[group] = val;
+    store.set(LS[group], val);
     syncTools();
-    buildCards();                               // the ring needs a roomier viewBox
+    buildCards();                               // the rings need a roomier viewBox
     return;
+  } else if (group === "units") {
+    state.units = val;
+    store.set(LS.units, val);
+    for (const c of cards) c._wxKey = null;
+    repaintAll();
   } else {
     state.theme = val;
     store.set(LS.theme, val);
@@ -1960,7 +2146,17 @@ document.addEventListener("pointerdown", e => {
   setMenu(false);
 });
 document.addEventListener("keydown", e => {
-  if (e.key === "Escape" && !settings.hidden) { setMenu(false); menuBtn.focus(); }
+  if (e.key !== "Escape") return;
+  if (!settings.hidden) { setMenu(false); menuBtn.focus(); }
+  else if (state.frozen != null) goLive();
+});
+
+// Clicking away from a dial or a time field returns to now. The dock and the
+// menu are exempt, so units and rings can be changed while the board is paused.
+document.addEventListener("pointerdown", e => {
+  if (state.frozen == null || scrub) return;
+  if (e.target.closest(".clock, .digital, .dock, #settings")) return;
+  goLive();
 });
 
 let toastTimer;
