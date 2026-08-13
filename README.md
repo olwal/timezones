@@ -12,6 +12,32 @@ Open-Meteo if weather is on. Offline, the font falls back to the system UI sans 
 the domes show no icons; the clocks, sunrise and sunset are all computed locally and
 keep working.
 
+![The dashboard in daylight](docs/board-light.png)
+
+Each card carries a dial, a twelve-hour forecast ring, the local time, a sky dome
+showing where the sun is in that city's day, and a countdown to the next end of the
+working day.
+
+![Day, dusk and night side by side](docs/card-detail.png)
+
+Tokyo in full daylight, Delhi mid-fade at 06:10, London at night. The dial darkens
+with the city while the card around it keeps full contrast.
+
+The page follows the board: when most of your cities are dark, so is everything else.
+
+![The dashboard at night](docs/board-dark.png)
+
+Clicking a city name opens a search over all 458 cities, each row showing its current
+local time. Same-name cities are distinguished by region — the reason `Cambridge`
+appears twice below.
+
+![Searching for a city](docs/city-picker.png)
+
+The forecast can ride the sky dome instead of the dial, covering the hours left in the
+current span rather than a fixed twelve.
+
+![Forecast icons along the sky dome](docs/weather-dome.png)
+
 ## Choosing cities
 
 **By URL** — comma-separated, in display order:
