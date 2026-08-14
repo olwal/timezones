@@ -36,6 +36,9 @@ html, body { margin: 0; padding: 0; }
   --fg: #131311;
   --muted: #8d8d86;
   --edge: rgba(0,0,0,.10);
+  /* The dial's own rim. Separate from --edge because in card shading the card
+     goes dark while the dial stays a pale moon, and one value cannot serve both. */
+  --dial-edge: rgba(0,0,0,.10);
   --sun: #e5a52c;
   --moon: #9d9d94;
 }
@@ -48,6 +51,7 @@ html.dark {
   --fg: #f0f0ee;
   --muted: #78786f;
   --edge: rgba(255,255,255,.14);
+  --dial-edge: rgba(255,255,255,.14);
   --sun: #c98f21;
   --moon: #d3d3ca;
 }
@@ -89,7 +93,11 @@ body {
 }
 .fab:hover { border-color: currentColor; }
 .fab:active { transform: translateY(1px); }
-.fab svg { width: 18px; height: 18px; }
+/* The icon is transparent to the pointer, so every event inside the button is
+   targeted at the button itself. Otherwise a press lands on a <path> whose
+   geometry is a 1.7px stroke with gaps around it, and the button's own 40px
+   circle is only reliably hit outside the icon. */
+.fab svg { width: 18px; height: 18px; pointer-events: none; }
 .fab .ico-close, .dock.open .ico-menu { display: none; }
 .dock.open .ico-close { display: block; }
 
@@ -109,9 +117,10 @@ body {
 }
 .hint { margin: 7px 0 0; font-size: 10.5px; line-height: 1.5; color: var(--muted); }
 .popover section.muted { opacity: .45; }
-/* The dial is grabbable for winding time. */
-.clock { cursor: grab; touch-action: none; }
-.clock:active { cursor: grabbing; }
+/* The dial is a set of targets: click an hour mark to go there, the centre to
+   come back to now. touch-action stays permissive so a tap on a dial does not
+   cost the page its scroll. */
+.clock { cursor: pointer; touch-action: manipulation; }
 
 /* Segmented control: every mode visible at once, rather than a button you
    have to click repeatedly to discover what it cycles through. */
@@ -154,8 +163,10 @@ body {
 }
 
 /* ---------------------------------------------------------------- card */
-/* --dial and --dial-fg are rewritten inline every second, interpolated from a
-   0-1 darkness value, so the watch face fades through twilight on its own. */
+/* Whichever surface is shading, its colours are rewritten inline every second,
+   interpolated from a 0-1 darkness value. In card shading the card's own
+   --face/--fg/--muted/--edge are overwritten and the dial stays pale; in dial
+   shading only --dial and --dial-fg move and the card keeps the page theme. */
 .card {
   --dial: #fff;
   --dial-fg: #131311;
@@ -165,6 +176,11 @@ body {
   padding: 16px 16px 0;
   display: flex; flex-direction: column; align-items: center;
   box-shadow: 0 1px 2px rgba(0,0,0,.10), 0 8px 24px -18px rgba(0,0,0,.5);
+  /* The surface cross-fades, the ink does not: mid-fade between a light and a
+     dark ink is grey on grey, which is the one state this must never pass
+     through. It steps at the halfway colour instead, where both read about
+     4.5:1 either way. */
+  transition: background-color .35s ease, border-color .35s ease;
 }
 .card.dragging { opacity: .35; }
 /* A caret in the gutter shows where the card will land, rather than
@@ -230,8 +246,12 @@ body {
 /* A stopped second hand reads as stopped, but dim it so it is unmistakable. */
 html.frozen .hand-sec { opacity: .3; }
 
+/* A read-out with nothing to click, sitting above the dock in the stack and wide
+   enough to reach it on a narrow screen, so it stays out of the way of the
+   pointer entirely. */
 .note {
   position: fixed; left: 50%; bottom: 26px; transform: translateX(-50%);
+  pointer-events: none;
   z-index: 27; display: flex; align-items: center; justify-content: center;
   flex-wrap: wrap; gap: 7px; max-width: calc(100vw - 32px);
   background: var(--face); color: var(--fg);
@@ -310,7 +330,10 @@ html[data-density="compact"] .skyband,
 html[data-density="compact"] .clock text,
 html[data-density="compact"] .clock .tick-min { display: none; }
 html[data-density="compact"] .card__remove { top: 2px; right: 2px; width: 16px; height: 16px; font-size: 12px; }
-html[data-density="compact"] .clock { max-width: 100%; margin: 3px 0 0; cursor: default; }
+html[data-density="compact"] .clock { max-width: 100%; margin: 3px 0 0; }
+/* The preview tag is wider than a compact tile's dial, and its text is dropped
+   with every other label at this size, so the whole tag goes. */
+html[data-density="compact"] .ghost-tag { display: none; }
 html[data-density="compact"] .digital { margin-top: 1px; gap: 3px; }
 html[data-density="compact"] .digital time { font-size: 15px; }
 html[data-density="compact"] .digital time small { font-size: 8px; margin-left: 1px; }
@@ -335,7 +358,7 @@ html[data-density="compact"] .add svg { width: 14px; height: 14px; }
   transition: color .15s ease, border-color .15s ease;
 }
 .add:hover { color: var(--page-fg); border-color: currentColor; }
-.add svg { width: 22px; height: 22px; }
+.add svg { width: 22px; height: 22px; pointer-events: none; }
 
 /* -------------------------------------------------------------- picker */
 .sheet {
@@ -447,8 +470,16 @@ html[data-density="compact"] .add svg { width: 14px; height: 14px; }
     </div>
   </section>
   <section>
-    <h2>Dark clock face</h2>
-    <div class="seg" role="radiogroup" aria-label="What makes a clock face dark" data-group="solar">
+    <h2>Night darkens</h2>
+    <div class="seg" role="radiogroup" aria-label="What darkens at night" data-group="shade">
+      <button type="button" role="radio" data-val="card">The card</button>
+      <button type="button" role="radio" data-val="dial">The dial</button>
+    </div>
+    <p class="hint" id="hint-shade"></p>
+  </section>
+  <section>
+    <h2>Night follows</h2>
+    <div class="seg" role="radiogroup" aria-label="What counts as night" data-group="solar">
       <button type="button" role="radio" data-val="0">Working hours</button>
       <button type="button" role="radio" data-val="1">Real sun</button>
     </div>
@@ -509,7 +540,7 @@ html[data-density="compact"] .add svg { width: 14px; height: 14px; }
   <span class="note-sep">&middot;</span>
   <kbd>&larr;</kbd><kbd>&rarr;</kbd><span>1 hour</span>
   <span class="note-sep">&middot;</span>
-  <kbd>Esc</kbd><span>current time</span>
+  <kbd>Esc</kbd><span>or a dial's centre for now</span>
 </div>
 
 <div class="toast" id="toast"></div>
@@ -1117,6 +1148,87 @@ function sunForOffset(city, parts, dayOffset) {
 const sunFor = (city, parts) => sunForOffset(city, parts, 0);
 
 /* =======================================================================
+   Where the sun and the moon actually are
+
+   The dome needs more than sunrise and sunset: both bodies are on it all the
+   time now, one above the horizon and one below, so each has to be placed from
+   its own position in the sky rather than from a span of clock time. That means
+   right ascension, declination and an hour angle for each.
+
+   Low-precision series, the usual ones: the sun is good to about a minute of
+   arc and the moon to about 0.3 degrees, which at this size is a fraction of a
+   pixel. Both depend only on the instant, so they are computed once per frame
+   and shared by every card; only the hour angle is per city.
+   ======================================================================= */
+const J2000 = 946728000000;                      // 2000-01-01T12:00Z, in ms
+const daysSince2000 = ms => (ms - J2000) / 86400000;
+const OBLIQ = 23.4397 * RAD;                     // tilt of the earth's axis
+
+// Ecliptic (longitude, latitude) to equatorial (right ascension, declination).
+function eclToEq(lon, lat) {
+  return {
+    ra: Math.atan2(Math.sin(lon) * Math.cos(OBLIQ) - Math.tan(lat) * Math.sin(OBLIQ),
+                   Math.cos(lon)),
+    dec: Math.asin(Math.sin(lat) * Math.cos(OBLIQ) +
+                   Math.cos(lat) * Math.sin(OBLIQ) * Math.sin(lon))
+  };
+}
+
+function sunEq(d) {
+  const M = (357.5291 + 0.98560028 * d) * RAD;                     // mean anomaly
+  const C = (1.9148 * Math.sin(M) + 0.02 * Math.sin(2 * M) +
+             0.0003 * Math.sin(3 * M)) * RAD;                      // equation of centre
+  const L = M + C + (102.9372 + 180) * RAD;                        // ecliptic longitude
+  return eclToEq(L, 0);
+}
+
+function moonEq(d) {
+  const L = (218.316 + 13.176396 * d) * RAD;   // mean longitude
+  const M = (134.963 + 13.064993 * d) * RAD;   // mean anomaly
+  const F = (93.272 + 13.229350 * d) * RAD;    // argument of latitude
+  const eq = eclToEq(L + 6.289 * RAD * Math.sin(M), 5.128 * RAD * Math.sin(F));
+  eq.dist = 385001 - 20905 * Math.cos(M);      // km, for the phase geometry
+  return eq;
+}
+
+// Greenwich sidereal time, less the observer's west longitude: the angle the
+// sky has turned through where they are standing.
+const siderealTime = (d, lonDeg) => (280.16 + 360.9856235 * d) * RAD + lonDeg * RAD;
+
+/* How much of the moon's disc is lit, and which limb it is lit from. Global,
+   not per city: everyone sees the same phase at the same instant. Only the
+   orientation is local, and only by hemisphere. */
+let moonPhaseAt = -1, moonPhaseVal = null;
+function moonPhase(nowMs) {
+  const minute = Math.floor(nowMs / 60000);
+  if (minute === moonPhaseAt) return moonPhaseVal;
+  moonPhaseAt = minute;
+  const d = daysSince2000(nowMs);
+  const s = sunEq(d), m = moonEq(d), sdist = 149598000;
+  const phi = Math.acos(Math.sin(s.dec) * Math.sin(m.dec) +
+              Math.cos(s.dec) * Math.cos(m.dec) * Math.cos(s.ra - m.ra));
+  const inc = Math.atan2(sdist * Math.sin(phi), m.dist - sdist * Math.cos(phi));
+  // Sign of the limb angle says which side of new moon we are on.
+  const limb = Math.atan2(Math.cos(s.dec) * Math.sin(s.ra - m.ra),
+    Math.sin(s.dec) * Math.cos(m.dec) -
+    Math.cos(s.dec) * Math.sin(m.dec) * Math.cos(s.ra - m.ra));
+  moonPhaseVal = { fraction: (1 + Math.cos(inc)) / 2, waxing: limb < 0 };
+  return moonPhaseVal;
+}
+
+const PHASE_NAMES = ["New moon", "Waxing crescent", "First quarter", "Waxing gibbous",
+  "Full moon", "Waning gibbous", "Last quarter", "Waning crescent"];
+function phaseName(ph) {
+  const f = ph.fraction;
+  if (f < 0.04) return PHASE_NAMES[0];
+  if (f > 0.96) return PHASE_NAMES[4];
+  const near = Math.abs(f - 0.5) < 0.03;
+  return ph.waxing
+    ? (near ? PHASE_NAMES[2] : f < 0.5 ? PHASE_NAMES[1] : PHASE_NAMES[3])
+    : (near ? PHASE_NAMES[6] : f > 0.5 ? PHASE_NAMES[5] : PHASE_NAMES[7]);
+}
+
+/* =======================================================================
    Persisted state
    ======================================================================= */
 const LS = {
@@ -1124,6 +1236,7 @@ const LS = {
   hour12: "worldclock.hour12",
   theme: "worldclock.theme",
   solar: "worldclock.solar",
+  shade: "worldclock.shade",
   weather: "worldclock.weather",
   ring: "worldclock.ring",
   units: "worldclock.units",
@@ -1153,6 +1266,7 @@ let state = {
   hour12: store.get(LS.hour12, "0") === "1",
   theme: store.get(LS.theme, "auto"),      // auto | light | dark
   solar: store.get(LS.solar, "0") === "1", // false = fixed evening hours
+  shade: store.get(LS.shade, "card"),      // card | dial: what darkens at night
   weather: store.get(LS.weather, "dial"),  // dial | dome | off
   ring: store.get(LS.ring, "icons"),       // icons | temps | both
   units: store.get(LS.units, "c"),         // c | f
@@ -1164,6 +1278,7 @@ if (!["auto", "full", "compact"].includes(state.density)) state.density = "auto"
 const COMPACT_BELOW = 560;
 const compact = () => state.density === "compact" ||
   (state.density === "auto" && window.innerWidth < COMPACT_BELOW);
+if (!["card", "dial"].includes(state.shade)) state.shade = "card";
 if (!["dial", "dome", "off"].includes(state.weather)) state.weather = "dial";
 if (!["icons", "temps", "both"].includes(state.ring)) state.ring = "icons";
 if (!["c", "f"].includes(state.units)) state.units = "c";
@@ -1306,22 +1421,68 @@ const pol = (r, deg) => [CX + r * Math.sin(deg * RAD), CY - r * Math.cos(deg * R
 
 /* -----------------------------------------------------------------------
    The sky dome above each dial. The horizontal axis is not clock time — it
-   is progress through the current daylight (or the current night), so the
-   left edge is always sunrise and the right edge always sunset however long
-   the day happens to be. Nothing here can be misread as a clock angle.
+   is progress across the sky, so the left edge is always the rising horizon
+   and the right edge the setting one however long the day happens to be.
+   Nothing here can be misread as a clock angle.
+
+   The dome is a whole circle seen edge on. The arc above the horizon is the
+   visible sky and the trough below it the hidden one, and a body that sets at
+   the right-hand end carries on leftwards through the trough to rise again at
+   the left. Sun and moon are both on it at all times, so one is always in the
+   trough: they circle, rather than each running left to right in turn.
    ----------------------------------------------------------------------- */
 const SKY = {
   h: 100,       // viewBox height; the extra room is for the forecast icons
   y: 62,        // the horizon
   x0: 18, x1: 182,
-  rise: 42,     // how high the sun climbs above the horizon at midday
-  dip: 15       // how far the moon dips below it at midnight
+  rise: 42,     // how high a body climbs above the horizon at its transit
+  dip: 15       // how far it dips below at its anti-transit
 };
 const skyX = t => 100 - 82 * Math.cos(Math.PI * t);
 const skyY = (t, up) => SKY.y + (up ? -SKY.rise : SKY.dip) * Math.sin(Math.PI * t);
+// Below the horizon the direction of travel reverses, which is what closes the
+// circle: rise at the left, set at the right, back to the left underneath.
+const spanX = (t, up) => skyX(up ? t : 1 - t);
 
-// The body that crosses the dome: a rayed sun by day, a crescent moon by
-// night. Drawn around (0,0) and moved into place with a translate.
+/* Where on the dome a body sits, from its declination and hour angle.
+   |H| < W is above the horizon, on the arc; the rest is the trough. W, the
+   semi-diurnal arc, is the same half-day-length term the sunrise equation
+   uses, so the arc's ends agree with the printed sunrise and sunset. */
+function domeSpot(latDeg, dec, H, h0) {
+  const lat = latDeg * RAD;
+  const cosW = (Math.sin(h0) - Math.sin(lat) * Math.sin(dec)) /
+               (Math.cos(lat) * Math.cos(dec));
+  const Hn = ((H + Math.PI) % (2 * Math.PI) + 2 * Math.PI) % (2 * Math.PI) - Math.PI;
+  // Circumpolar: nothing rises or sets, so run the whole day across one half.
+  if (cosW <= -1) return { t: 0.5 + Hn / (2 * Math.PI), up: true };
+  if (cosW >= 1) return { t: 0.5 - Hn / (2 * Math.PI), up: false };
+  const W = Math.acos(cosW);
+  if (Math.abs(Hn) <= W) return { t: 0.5 + Hn / (2 * W), up: true };
+  const h = Hn > 0 ? Hn : Hn + 2 * Math.PI;          // W .. 2π-W, set to rise
+  return { t: (h - W) / (2 * Math.PI - 2 * W), up: false };
+}
+// Standard altitudes for "risen": the sun's apparent disc, the moon's centre
+// allowing for parallax and refraction.
+const SUN_H0 = -0.833 * RAD, MOON_H0 = 0.125 * RAD;
+
+/* The moon, drawn as it actually looks from the city: a disc with a terminator
+   swept across it. The outer arc is the lit limb and the inner elliptical one
+   the terminator, whose half-width is |1-2f| of the radius, so f = 0 collapses
+   it onto the limb (nothing), f = 0.5 flattens it to a straight edge (half) and
+   f = 1 pushes it out to the far limb (full). South of the equator the whole
+   thing is seen upside down, so the lit side swaps. */
+const MOON_R = 5.4;
+function moonPath(f, litRight) {
+  const rx = (MOON_R * Math.abs(1 - 2 * f)).toFixed(2);
+  const bulge = f < 0.5 ? 0 : 1;               // which way the terminator curves
+  const outer = litRight ? 1 : 0;
+  const term = litRight ? bulge : 1 - bulge;
+  return `M 0 ${-MOON_R} A ${MOON_R} ${MOON_R} 0 0 ${outer} 0 ${MOON_R} ` +
+         `A ${rx} ${MOON_R} 0 0 ${term} 0 ${-MOON_R} Z`;
+}
+
+// Both bodies, drawn around (0,0) and moved into place with a translate. The
+// moon goes first so that at new moon it passes behind the sun, not over it.
 function skyBodies() {
   let rays = "";
   for (let i = 0; i < 8; i++) {
@@ -1332,14 +1493,18 @@ function skyBodies() {
       stroke="var(--sun)" stroke-width="1.15" stroke-linecap="round"/>`;
   }
   return `
-  <g class="sky-sun">
+  <g class="sky-moon" transform="translate(${SKY.x0} ${SKY.y})">
+    <title></title>
+    <circle r="7.4" fill="var(--moon)" opacity=".13"/>
+    <!-- The whole disc, faintly: at new moon there is nothing else to see, and
+         the dark limb is the rest of the time the only clue to how full it is. -->
+    <circle r="${MOON_R}" fill="none" stroke="var(--moon)" stroke-width=".6" opacity=".45"/>
+    <path class="moon-lit" d="${moonPath(0.5, true)}" fill="var(--moon)"/>
+  </g>
+  <g class="sky-sun" transform="translate(${SKY.x0} ${SKY.y})">
     <circle r="8.4" fill="var(--sun)" opacity=".17"/>
     ${rays}
     <circle r="3.4" fill="var(--sun)"/>
-  </g>
-  <g class="sky-moon" style="display:none">
-    <circle r="7.4" fill="var(--moon)" opacity=".13"/>
-    <path d="M0 -4.2 A 4.2 4.2 0 0 0 0 4.2 A 5.9 5.9 0 0 1 0 -4.2 Z" fill="var(--moon)"/>
   </g>`;
 }
 
@@ -1356,7 +1521,7 @@ function domeSVG() {
   <line x1="${x0}" y1="${y - 4}" x2="${x0}" y2="${y + 4}" stroke="currentColor" stroke-width="1" opacity=".4"/>
   <line x1="${x1}" y1="${y - 4}" x2="${x1}" y2="${y + 4}" stroke="currentColor" stroke-width="1" opacity=".4"/>
   <g class="wx"></g>
-  <g class="sky-body" transform="translate(${x0} ${y})">${skyBodies()}</g>`;
+  ${skyBodies()}`;
 }
 
 const DIAL = 92;      // dial disc radius
@@ -1401,9 +1566,16 @@ function faceSVG() {
       font-size="12" font-weight="500" fill="var(--dial-fg)" opacity=".8">${n}</text>`;
   }
   return `
-  <circle cx="${CX}" cy="${CY}" r="${DIAL}" fill="var(--dial)" stroke="var(--edge)" stroke-width="1"/>
+  <circle cx="${CX}" cy="${CY}" r="${DIAL}" fill="var(--dial)" stroke="var(--dial-edge)" stroke-width="1"/>
   <g class="wxring"></g>
   <g>${ticks}${nums}</g>
+  <!-- Where a click would land: a ghost of the hour hand, under the real hands
+       so the two never muddle, and a tag with the time it would set, over them
+       so it stays readable. Both hidden until the pointer is on the dial. -->
+  <g class="ghost-hand" style="display:none" pointer-events="none" transform="rotate(0 ${CX} ${CY})">
+    <rect x="${CX - 3.1}" y="${CY - 52}" width="6.2" height="54" rx="1.4"
+      fill="var(--accent)" opacity=".6"/>
+  </g>
   <g class="hand-hour"  transform="rotate(0 ${CX} ${CY})">
     <rect x="${CX - 3.1}" y="${CY - 52}" width="6.2" height="60" rx="1.4" fill="var(--dial-fg)"/>
   </g>
@@ -1414,7 +1586,16 @@ function faceSVG() {
     <rect x="${CX - 0.75}" y="${CY - 78}" width="1.5" height="96" rx="0.75" fill="var(--accent)"/>
     <circle cx="${CX}" cy="${CY}" r="3.6" fill="var(--accent)"/>
   </g>
-  <circle cx="${CX}" cy="${CY}" r="1.5" fill="var(--dial)"/>`;
+  <circle cx="${CX}" cy="${CY}" r="1.5" fill="var(--dial)"/>
+  <!-- The centre is the way back to now, so it rings while time is paused. -->
+  <circle class="hub-ring" cx="${CX}" cy="${CY}" r="17" fill="none" stroke="var(--accent)"
+    stroke-width="2" opacity="0" pointer-events="none"/>
+  <g class="ghost-tag" style="display:none" pointer-events="none">
+    <rect class="ghost-bg" x="${CX - 20}" y="${CY + 22}" width="40" height="18" rx="9"
+      fill="var(--accent)"/>
+    <text class="ghost-txt" x="${CX}" y="${CY + 31.4}" text-anchor="middle"
+      dominant-baseline="central" font-size="11.5" font-weight="600" fill="#14140f"></text>
+  </g>`;
 }
 
 /* =======================================================================
@@ -1486,16 +1667,17 @@ function buildCards() {
       else if (e.key === "Enter") { e.preventDefault(); editEl.select(); }
     });
 
-    // ---- drag the dial to wind time forwards or back
-    // Left off the compact tiles: the dial is too small to aim at, and on a
-    // phone the gesture competes with scrolling the board.
+    // ---- click an hour mark to go there, the centre to come back to now
     const clockEl = el.querySelector(".clock");
+    clockEl.addEventListener("click", e => dialClick(i, clockEl, e));
+    clockEl.addEventListener("pointermove", e => { scrubMove(e); dialHover(i, clockEl, e); });
+    clockEl.addEventListener("pointerleave", () => dialHover(i, clockEl, null));
+    // ---- and the hidden gestures: hold a modifier and drag the dial to wind
+    // time. Left off the compact tiles, where the dial is too small to aim at.
     if (!compact()) {
       clockEl.addEventListener("pointerdown", e => scrubStart(i, clockEl, e));
-      clockEl.addEventListener("pointermove", scrubMove);
       clockEl.addEventListener("pointerup", scrubEnd);
       clockEl.addEventListener("pointercancel", scrubEnd);
-      clockEl.addEventListener("dragstart", e => e.preventDefault());
     }
 
     // ---- drag to reorder
@@ -1547,9 +1729,15 @@ function buildCards() {
       domeFill: el.querySelector(".dome-fill"),
       wx: el.querySelector(".wx"),
       wxNow: el.querySelector(".wx-now"),
-      body: el.querySelector(".sky-body"),
-      skySun: el.querySelector(".sky-sun"),
-      skyMoon: el.querySelector(".sky-moon"),
+      sunG: el.querySelector(".sky-sun"),
+      moonG: el.querySelector(".sky-moon"),
+      moonLit: el.querySelector(".moon-lit"),
+      moonTitle: el.querySelector(".sky-moon title"),
+      ghostHand: el.querySelector(".ghost-hand"),
+      ghostTag: el.querySelector(".ghost-tag"),
+      ghostBg: el.querySelector(".ghost-bg"),
+      ghostTxt: el.querySelector(".ghost-txt"),
+      hubRing: el.querySelector(".hub-ring"),
       next: el.querySelector(".next"),
       wxRing: el.querySelector(".wxring"),
       miniWx: el.querySelector(".mini-wx")
@@ -1571,8 +1759,8 @@ function buildCards() {
 const CONFIG = {
   morning:   8 * 60,   // 08:00 — start of the working day
   evening:  18 * 60,   // 18:00 — end of the working day
-  nightFrom: 20 * 60,  // 20:00 — the clock face turns black  ("hours" mode)
-  nightTo:    6 * 60,  // 06:00 — the clock face turns white again
+  nightFrom: 20 * 60,  // 20:00 — the shading goes fully dark   ("hours" mode)
+  nightTo:    6 * 60,  // 06:00 — and fully light again
   fade:          45,   // minutes either side of those, spent fading
   dayAbove:       2,   // sun this high  = full daylight        ("solar" mode)
   nightBelow:    -6    // sun this low   = full dark (civil twilight)
@@ -1598,14 +1786,23 @@ function darkness(city, sun, p, nowMs) {
   return isNight(m) ? 0.5 + half : 0.5 - half;
 }
 
-/* Only the watch face fades — the card surface and its text come from the page
-   theme, so a city at dusk never leaves grey text on a grey card.
-   The dial runs white -> warm dusk -> near black. Its markings do NOT
-   interpolate: at the midpoint they would land on the same grey as the dial and
-   vanish, which is the exact problem the fade was meant to avoid. They step
-   instead, and both halves stay legible (black on mid grey is about 5:1,
-   white on mid grey about 4:1). */
+/* Two things can carry nightfall, and the choice is a mode.
+
+   Card (the default): the card is the sky and it darkens, running white ->
+   sunset -> dusk blue -> near black, while the dial stays a pale disc on it.
+   The dial then reads as the moon, and the thing that changes is the thing that
+   actually changes outdoors.
+
+   Dial: the older behaviour. Only the watch face fades and the card keeps the
+   page theme, which is the safer arrangement on a wall of cards.
+
+   Either way the fading surface's own text does NOT interpolate with it: at the
+   midpoint it would land on the same grey as its background and vanish, which
+   is the exact problem the fade was meant to avoid. It steps at the halfway
+   point instead, and both halves stay legible: on the crossover colour, black
+   is about 4.6:1 and white about 4.5:1. */
 const DIAL_STOPS = [[255, 255, 255], [138, 133, 120], [16, 16, 16]];
+const CARD_STOPS = [[255, 255, 255], [216, 166, 140], [54, 52, 92], [16, 16, 22]];
 
 function rampColour(stops, k) {
   const span = 1 / (stops.length - 1);
@@ -1617,9 +1814,35 @@ function rampColour(stops, k) {
          `${Math.round(a[2] + (b[2] - a[2]) * t)})`;
 }
 
+// The four card variables, plus the sun and moon inks, so that a daylight card
+// on a dark page still gets daylight colours on its dome.
+const CARD_INK = {
+  day:   { fg: "#131311", muted: "rgba(19,19,17,.6)", edge: "rgba(0,0,0,.11)",
+           sun: "#e5a52c", moon: "#8f8f86" },
+  night: { fg: "#f2f2ef", muted: "rgba(242,242,239,.58)", edge: "rgba(255,255,255,.16)",
+           sun: "#e8ae3d", moon: "#e2e2d8" }
+};
+const CARD_VARS = ["--face", "--fg", "--muted", "--edge", "--sun", "--moon"];
+
 function applyPalette(el, k) {
-  el.style.setProperty("--dial", rampColour(DIAL_STOPS, k));
-  el.style.setProperty("--dial-fg", k < 0.5 ? "#131311" : "#f2f2ef");
+  // In card shading the dial holds still at its daylight end: it is the moon.
+  const dialK = state.shade === "card" ? 0 : k;
+  el.style.setProperty("--dial", rampColour(DIAL_STOPS, dialK));
+  el.style.setProperty("--dial-fg", dialK < 0.5 ? "#131311" : "#f2f2ef");
+  if (state.shade !== "card") {
+    for (const v of CARD_VARS) el.style.removeProperty(v);
+    el.style.removeProperty("--dial-edge");
+    return;
+  }
+  const ink = k < 0.5 ? CARD_INK.day : CARD_INK.night;
+  el.style.setProperty("--face", rampColour(CARD_STOPS, k));
+  el.style.setProperty("--fg", ink.fg);
+  el.style.setProperty("--muted", ink.muted);
+  el.style.setProperty("--edge", ink.edge);
+  el.style.setProperty("--sun", ink.sun);
+  el.style.setProperty("--moon", ink.moon);
+  // The dial keeps its own rim: --edge has gone dark with the card.
+  el.style.setProperty("--dial-edge", "rgba(0,0,0,.12)");
 }
 
 const viewerTz = Intl.DateTimeFormat().resolvedOptions().timeZone;
@@ -1639,6 +1862,10 @@ function update() {
   const spun = spinning();
   const viewer = partsFor(viewerTz, now);
   const viewerDay = Date.UTC(viewer.y, viewer.mo - 1, viewer.d);
+  // Both bodies' positions in the sky depend only on the instant, so they are
+  // worked out once here; each card then only needs its own hour angle.
+  const days = daysSince2000(nowMs);
+  const sEq = sunEq(days), mEq = moonEq(days);
 
   for (const c of cards) {
     const p = partsFor(c.city.tz, now);
@@ -1662,10 +1889,11 @@ function update() {
       paintSlow(c, p, nowMs, viewerDay);
     }
 
-    // ---- the sun (or moon) creeps across the dome in real time
-    const t = Math.min(1, Math.max(0, (nowMs - c._spanFrom) / (c._spanTo - c._spanFrom)));
-    c.body.setAttribute("transform",
-      `translate(${skyX(t).toFixed(2)} ${skyY(t, c._sunUp).toFixed(2)})`);
+    // ---- sun and moon both creep round the dome in real time, each on its own
+    // orbit, so one of the two is always under the horizon.
+    const lst = siderealTime(days, c.city.lon);
+    placeBody(c.sunG, domeSpot(c.city.lat, sEq.dec, lst - sEq.ra, SUN_H0));
+    placeBody(c.moonG, domeSpot(c.city.lat, mEq.dec, lst - mEq.ra, MOON_H0));
   }
 
   // ---- page skin: on auto, it follows night where the viewer is
@@ -1684,6 +1912,15 @@ function update() {
   paintTitle();
 
   requestAnimationFrame(update);
+}
+
+// A body below the horizon is out of sight rather than gone, so it goes quiet
+// instead of disappearing: the pair still reads as one circling movement.
+function placeBody(g, spot) {
+  g.setAttribute("transform",
+    `translate(${spanX(spot.t, spot.up).toFixed(2)} ${skyY(spot.t, spot.up).toFixed(2)})`);
+  const op = spot.up ? "" : ".38";
+  if (g._op !== op) { g._op = op; g.style.opacity = op; }
 }
 
 /* The tab title carries the first few clocks, so a pinned tab or a hover over
@@ -1739,9 +1976,19 @@ function paintSlow(c, p, nowMs, viewerDay) {
     c.sunPolar.hidden = true;
   }
   c._spanFrom = from; c._spanTo = to; c._sunUp = sunUp;
-  // Sun while it is actually above the horizon, moon once it has set.
-  c.skySun.style.display = sunUp ? "" : "none";
-  c.skyMoon.style.display = sunUp ? "none" : "";
+
+  // ---- the moon's phase, as it is seen from this city
+  const ph = moonPhase(nowMs);
+  // Lit on the right while waxing, and the other way round south of the
+  // equator, where the whole disc is seen upside down.
+  const litRight = ph.waxing !== (c.city.lat < 0);
+  const phKey = Math.round(ph.fraction * 100) + (litRight ? "r" : "l");
+  if (c._phKey !== phKey) {
+    c._phKey = phKey;
+    c.moonLit.setAttribute("d", moonPath(ph.fraction, litRight));
+    c.moonTitle.textContent = phaseName(ph) + ", " + Math.round(ph.fraction * 100) + "% lit";
+  }
+
   // Light the half of the dome we are actually in; the other half stays a
   // faint track. The warm sky fill would read as a brown mass at night.
   c.domeDay.style.opacity = sunUp ? ".55" : ".18";
@@ -1848,14 +2095,15 @@ function paintWeather(c, nowMs, sunUp) {
   // Space the icons by distance along the arc, not by time. skyX is a cosine,
   // so it barely moves near sunrise and sunset while the hours keep passing —
   // picking every Nth hour piles them up at the ends. Seeding from the sun's
-  // own position also stops the first icon colliding with it.
+  // own position also stops the first icon colliding with it. They follow the
+  // sun's direction of travel, so by night they read right to left.
   const MIN_GAP = 15;
   const span = c._spanTo - c._spanFrom;
-  let lastX = skyX(clamp01((nowMs - c._spanFrom) / span));
+  let lastX = spanX(clamp01((nowMs - c._spanFrom) / span), sunUp);
   const picks = [];
   for (const [ts, code, temp] of ahead) {
     const t = clamp01((ts - c._spanFrom) / span);
-    const x = skyX(t);
+    const x = spanX(t, sunUp);
     if (Math.abs(x - lastX) < MIN_GAP) continue;
     picks.push([t, x, code, temp]);
     lastX = x;
@@ -1974,7 +2222,9 @@ function zonedTimeToEpoch(tz, y, mo, d, h, mi) {
   return guess;
 }
 
-const repaintAll = () => { for (const c of cards) c._rev = null; };
+// The click preview goes stale too: which time a mark stands for depends on
+// where the board is now, so it has to be re-derived after any jump.
+const repaintAll = () => { for (const c of cards) { c._rev = null; c._ghostKey = null; } };
 
 // The board is paused whenever state.frozen is set, whichever way it got there:
 // typing a time, or dragging a dial. Both entry points share this so a gesture
@@ -2011,7 +2261,7 @@ function goLive() {
   state.frozen = null;
   document.documentElement.classList.remove("frozen");
   frozenNote.hidden = true;
-  for (const k of cards) k.el.draggable = true;
+  for (const k of cards) { k.el.draggable = true; setGhost(k, ""); }
   repaintAll();
 }
 const stopEdit = () => closeEditor(false);
@@ -2045,21 +2295,118 @@ function applyTyped(i) {
 }
 
 /* -----------------------------------------------------------------------
-   Dragging a dial to move time
+   Clicking a dial
 
-   Two gestures live here.
+   The dial is already a map of the day, so it is also the control: click the
+   mark you want and the hour hand goes there, click the centre and the board
+   comes back to now. Nothing to hold down, nothing to discover, and it works
+   the same with a mouse or a thumb.
 
-   Spin (the default) is a sprung joystick. Pull left or right of where you
+   Snapped to the half hour. The hour marks are the obvious targets and each
+   sits dead centre of its own segment, while the midpoints between them cover
+   the :30 that most meetings actually start on.
+
+   A 12-hour dial names two times, and the nearer one is the one meant: clicking
+   the mark behind the hour hand steps back an hour rather than forward eleven,
+   and no click ever moves the board more than six hours.
+   ----------------------------------------------------------------------- */
+const HUB_R = 24;             // the centre target, in dial units
+const DIAL_HIT = DIAL + 6;    // out to the rim; the forecast ring is a read-out
+let woundAt = 0;              // when a winding gesture last finished
+
+// Where the pointer is on the dial, in dial units from the centre. Every
+// viewBox is centred on the dial, so the element's own centre is the pivot.
+function dialPoint(el, e) {
+  const r = el.getBoundingClientRect();
+  const k = el.viewBox.baseVal.width / r.width;
+  const ux = (e.clientX - (r.left + r.width / 2)) * k;
+  const uy = (e.clientY - (r.top + r.height / 2)) * k;
+  return { r: Math.hypot(ux, uy), deg: (Math.atan2(ux, -uy) / RAD + 360) % 360 };
+}
+
+function dialTarget(city, deg) {
+  const base = state.frozen != null ? state.frozen : currentMinute();
+  const p = partsFor(city.tz, new Date(base));
+  const m = p.h * 60 + p.mi;
+  const half = (Math.round(deg / 15) % 24) * 30;
+  const a = cyc(half - m), b = cyc(half + 720 - m);
+  const total = m + (Math.abs(a) <= Math.abs(b) ? a : b);
+  return { p, mins: wrapDay(total), dayShift: Math.floor(total / 1440) };
+}
+
+function dialClick(i, el, e) {
+  // A modifier press is one of the winding gestures, which end their own way.
+  if (e.shiftKey || e.altKey || e.metaKey || e.ctrlKey) return;
+  // A drag that ended here also produces a click. Let the wind stand rather
+  // than jumping somewhere else, including when the modifier was let go first.
+  if (Date.now() - woundAt < 400) return;
+  const c = cards[i];
+  const pt = dialPoint(el, e);
+  setGhost(c, "");
+  if (pt.r <= HUB_R) { goLive(); return; }
+  if (pt.r > DIAL_HIT) return;
+  closeEditor(true);                       // keep any typed instant as the base
+  const { p, mins, dayShift } = dialTarget(c.city, pt.deg);
+  freezeAt(zonedTimeToEpoch(c.city.tz, p.y, p.mo, p.d + dayShift,
+    Math.floor(mins / 60), mins % 60));
+  for (const k of cards) k._wxKey = null;
+}
+
+/* The preview: a ghost of the hour hand where it would land, and a tag with the
+   time that means, so aiming is never a guess. Mouse only, since there is no
+   hovering on a touch screen and a tap acts immediately anyway. */
+function setGhost(c, key, deg, mins) {
+  if (c._ghostKey === key) return;
+  c._ghostKey = key;
+  c.hubRing.style.opacity = key === "hub" ? ".9" : "0";
+  if (key === "hub" || !key) {
+    c.ghostHand.style.display = "none";
+    c.ghostTag.style.display = "none";
+    return;
+  }
+  c.ghostHand.setAttribute("transform", `rotate(${deg} ${CX} ${CY})`);
+  c.ghostHand.style.display = "";
+  const txt = stamp(mins, state.hour12);
+  c.ghostTxt.textContent = txt;
+  const w = Math.max(34, txt.length * 6.9 + 12);
+  c.ghostBg.setAttribute("width", w.toFixed(1));
+  c.ghostBg.setAttribute("x", (CX - w / 2).toFixed(1));
+  c.ghostTag.style.display = "";
+}
+
+function dialHover(i, el, e) {
+  const c = cards[i];
+  if (!c) return;
+  if (!e || scrub || e.pointerType !== "mouse" || e.shiftKey || e.altKey) {
+    setGhost(c, ""); return;
+  }
+  const pt = dialPoint(el, e);
+  // The centre only does something while the board is paused, so that is the
+  // only time it offers anything.
+  if (pt.r <= HUB_R) { setGhost(c, state.frozen != null ? "hub" : ""); return; }
+  if (pt.r > DIAL_HIT) { setGhost(c, ""); return; }
+  const deg = (Math.round(pt.deg / 15) % 24) * 15;
+  const key = "d" + deg + (state.hour12 ? "h" : "");
+  if (c._ghostKey === key) return;
+  setGhost(c, key, deg, dialTarget(c.city, deg).mins);
+}
+
+/* -----------------------------------------------------------------------
+   Winding a dial: the hidden gestures
+
+   Both are behind a modifier, because a plain press on a dial now means jump.
+
+   Spin (hold Shift) is a sprung joystick. Pull left or right of where you
    pressed and time runs that way, faster the further you pull, until you let
    go. Pulling is cheap, so covering half a day costs one gesture rather than
    the dozen turns winding needed.
 
-   Wind (hold Shift) is the literal one: six degrees is one minute, so the
-   minute hand tracks the pointer and a full turn is an hour. Precise, but
-   tedious over any distance, so it is kept as a hidden alternative.
+   Wind (hold Alt) is the literal one: six degrees is one minute, so the minute
+   hand tracks the pointer and a full turn is an hour. Precise, but tedious over
+   any distance.
 
-   Either way, releasing leaves the board paused. A press with no drag returns
-   to now, so tapping a dial is the way out as well as Escape.
+   Either way, releasing leaves the board paused, and a modified press with no
+   drag returns to now, same as clicking the centre.
    ----------------------------------------------------------------------- */
 let scrub = null;
 const spinning = () => !!(scrub && scrub.armed && scrub.mode === "spin" && scrub.rate);
@@ -2084,10 +2431,12 @@ const dialAngle = (el, x, y) => {
 
 function scrubStart(i, el, e) {
   if (e.button !== undefined && e.button !== 0) return;
+  const mode = e.shiftKey ? "spin" : e.altKey ? "wind" : null;
+  if (!mode) return;                  // a plain press belongs to click-to-jump
   e.preventDefault();
   closeEditor(true);                  // keep any typed instant as the base
   scrub = {
-    el, mode: e.shiftKey ? "wind" : "spin",
+    el, mode,
     armed: false, rate: 0, tick: Date.now(),
     ox: e.clientX, base: state.frozen != null ? state.frozen : currentMinute(),
     last: dialAngle(el, e.clientX, e.clientY), turned: 0
@@ -2126,6 +2475,7 @@ function scrubEnd() {
   scrub = null;
   for (const k of cards) k.el.draggable = true;
   if (!wasArmed) { goLive(); return; }             // a tap means back to now
+  woundAt = Date.now();
   // Land on a whole minute so the second hand parks at twelve, and let the
   // forecast catch up with wherever we ended.
   state.frozen = Math.round(state.frozen / 60000) * 60000;
@@ -2273,6 +2623,10 @@ const menuBtn = document.getElementById("menu");
 const settings = document.getElementById("settings");
 
 const HINTS = {
+  shade: {
+    card: "The card is the sky and darkens with the city, leaving the dial as a pale moon on it.",
+    dial: "Only the watch face darkens. The cards keep the page theme, which is steadier on a big board."
+  },
   solar: {
     "0": "Every city darkens between 20:00 and 06:00. Identical everywhere, so cards are easy to compare.",
     "1": "Each city darkens at its own dusk, following the real sun. Correct at high latitudes."
@@ -2297,6 +2651,7 @@ const HINTS = {
 const settingValue = group =>
   group === "hour12" ? (state.hour12 ? "1" : "0") :
   group === "solar" ? (state.solar ? "1" : "0") :
+  group === "shade" ? state.shade :
   group === "weather" ? state.weather :
   group === "ring" ? state.ring :
   group === "units" ? state.units :
@@ -2311,6 +2666,7 @@ function syncTools() {
       b.tabIndex = on ? 0 : -1;
     }
   }
+  document.getElementById("hint-shade").textContent = HINTS.shade[state.shade];
   document.getElementById("hint-solar").textContent = HINTS.solar[settingValue("solar")];
   document.getElementById("hint-weather").textContent = HINTS.weather[state.weather];
   document.getElementById("hint-ring").textContent = HINTS.ring[state.ring];
@@ -2329,10 +2685,13 @@ function applySetting(group, val) {
     store.set(LS.hour12, val);
     toolsRev++;                                 // forces the text to repaint
     for (const c of cards) c._wxKey = null;     // and the forecast tooltips
-  } else if (group === "solar") {
-    state.solar = val === "1";
-    store.set(LS.solar, val);
-    for (const c of cards) c._k = undefined;    // repaint the dials at once
+  } else if (group === "solar" || group === "shade") {
+    if (group === "solar") state.solar = val === "1"; else state.shade = val;
+    store.set(LS[group], val);
+    // Both change what the ramp paints, so every card has to be re-inked now
+    // rather than at the next perceptible change in darkness.
+    for (const c of cards) c._k = undefined;
+    repaintAll();
   } else if (group === "weather" || group === "ring" || group === "density") {
     state[group] = val;
     store.set(LS[group], val);
