@@ -1071,6 +1071,11 @@ function offsetLabel(min) {
   return "GMT" + (a === 0 ? "" : sign + h + (m ? ":" + String(m).padStart(2, "0") : ""));
 }
 
+// English, like every other label here, rather than the browser's locale: a card
+// reading "mercredi" beside "TILL MORNING 08:00" would be worse than either.
+const DAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday",
+                   "Friday", "Saturday"];
+
 function clockText(h, mi, hour12) {
   if (!hour12) return { t: String(h).padStart(2, "0") + ":" + String(mi).padStart(2, "0"), suffix: "" };
   const ap = h < 12 ? "am" : "pm";
@@ -1860,7 +1865,6 @@ function update() {
   // is a whole number of minutes from UTC, so seconds-of-minute are universal.
   const secs = (nowMs % 60000) / 1000;
   const spun = spinning();
-  const viewer = partsFor(viewerTz, now);
   const viewerDay = Date.UTC(viewer.y, viewer.mo - 1, viewer.d);
   // Both bodies' positions in the sky depend only on the instant, so they are
   // worked out once here; each card then only needs its own hour angle.
@@ -2013,11 +2017,16 @@ function paintSlow(c, p, nowMs, viewerDay) {
   c.time.innerHTML = t.t + (t.suffix ? `<small>${t.suffix}</small>` : "");
   c.meta.textContent = c.city.place + " · " + offsetLabel(p.offset);
 
-  const dayDelta = Math.round((Date.UTC(p.y, p.mo - 1, p.d) - viewerDay) / 86400000);
-  const short = dayDelta === 0 ? "" : (dayDelta > 0 ? "+" : "−") + Math.abs(dayDelta) + "d";
-  c.rel.textContent = compact() ? short
-    : dayDelta === 0 ? "today" : dayDelta === 1 ? "tomorrow"
-    : dayDelta === -1 ? "yesterday" : short;
+  // The city's own weekday, rather than today / tomorrow / yesterday. A day name
+  // is an absolute fact and needs no reference point, which is what you want on
+  // a board where cards differ in date from each other and not only from yours.
+  // Compact tiles keep their rule of saying only what is surprising: the same
+  // date as yours stays blank, and a different one gets the day in three letters,
+  // which is what the old ±1d was trying to say.
+  const cardDay = Date.UTC(p.y, p.mo - 1, p.d);
+  const name = DAY_NAMES[new Date(cardDay).getUTCDay()];
+  c.rel.textContent = !compact() ? name
+    : cardDay === viewerDay ? "" : name.slice(0, 3);
 
   // ---- whichever working-day boundary comes round next, and nothing else
   const m = p.minutes;

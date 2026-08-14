@@ -208,6 +208,11 @@ Two details worth knowing:
 - **Both bodies move in real time**, repositioned every frame.
 - **The second hand floats**, a true continuous sweep driven off the epoch so every
   card is in lockstep. The minute and hour hands drift continuously too.
+- **Beside the time is that city's weekday**, `Friday`, rather than today or tomorrow.
+  A day name is absolute and needs no reference point, which is what you want on a
+  board where the cards differ in date from each other and not only from yours.
+  Compact tiles keep their rule of saying only what is surprising: your own date is
+  left blank, another one gets three letters.
 - **Nightfall fades a surface between light and dark** rather than flipping it, from a
   single 0-1 darkness value recomputed every second. **Night darkens** chooses which
   surface. *The card* (the default) treats the card as the sky, running white to
