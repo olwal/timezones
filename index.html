@@ -1865,6 +1865,7 @@ function update() {
   // is a whole number of minutes from UTC, so seconds-of-minute are universal.
   const secs = (nowMs % 60000) / 1000;
   const spun = spinning();
+  const viewer = partsFor(viewerTz, now);
   const viewerDay = Date.UTC(viewer.y, viewer.mo - 1, viewer.d);
   // Both bodies' positions in the sky depend only on the instant, so they are
   // worked out once here; each card then only needs its own hour angle.
