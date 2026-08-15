@@ -1273,7 +1273,7 @@ let state = {
   solar: store.get(LS.solar, "0") === "1", // false = fixed evening hours
   shade: store.get(LS.shade, "card"),      // card | dial: what darkens at night
   weather: store.get(LS.weather, "dial"),  // dial | dome | off
-  ring: store.get(LS.ring, "icons"),       // icons | temps | both
+  ring: store.get(LS.ring, "both"),        // icons | temps | both
   units: store.get(LS.units, "c"),         // c | f
   density: store.get(LS.density, "auto")   // auto | full | compact
 };
@@ -1470,15 +1470,27 @@ function domeSpot(latDeg, dec, H, h0) {
 // allowing for parallax and refraction.
 const SUN_H0 = -0.833 * RAD, MOON_H0 = 0.125 * RAD;
 
-/* The moon, drawn as it actually looks from the city: a disc with a terminator
-   swept across it. The outer arc is the lit limb and the inner elliptical one
-   the terminator, whose half-width is |1-2f| of the radius, so f = 0 collapses
-   it onto the limb (nothing), f = 0.5 flattens it to a straight edge (half) and
-   f = 1 pushes it out to the far limb (full). South of the equator the whole
-   thing is seen upside down, so the lit side swaps. */
-const MOON_R = 5.4;
+/* The moon, drawn as it actually looks from the city: only the lit part, since
+   the dark limb is not visible in the sky either. The outer arc is the lit limb
+   and the inner elliptical one the terminator, whose half-width is |1-2f| of the
+   radius, so f = 0.5 flattens it to a straight edge and f = 1 pushes it out to
+   the far limb. South of the equator the whole thing is seen upside down, so the
+   lit side swaps.
+
+   The disc is about 13px across on screen, which sets a floor on what the shape
+   can say: drawn honestly, a 7% crescent is a sliver 0.8px wide, invisible next
+   to anything else on the card. So the terminator is capped, and a thin crescent
+   is drawn at a width that survives, about a tenth of the disc. The last 2% at
+   either end keeps its true shape: new moon draws nothing, which is what you can
+   see of it, and full draws a plain disc. Hover for the real figure. */
+const MOON_R = 6.4;
+const TERM_MAX = 0.8;         // cap on the terminator, as a fraction of MOON_R
 function moonPath(f, litRight) {
-  const rx = (MOON_R * Math.abs(1 - 2 * f)).toFixed(2);
+  if (f <= 0.02) return "";                             // new moon: nothing to see
+  const disc = `M 0 ${-MOON_R} A ${MOON_R} ${MOON_R} 0 1 1 0 ${MOON_R} ` +
+               `A ${MOON_R} ${MOON_R} 0 1 1 0 ${-MOON_R} Z`;
+  if (f >= 0.98) return disc;                           // full: a plain disc
+  const rx = (MOON_R * Math.min(Math.abs(1 - 2 * f), TERM_MAX)).toFixed(2);
   const bulge = f < 0.5 ? 0 : 1;               // which way the terminator curves
   const outer = litRight ? 1 : 0;
   const term = litRight ? bulge : 1 - bulge;
@@ -1500,10 +1512,11 @@ function skyBodies() {
   return `
   <g class="sky-moon" transform="translate(${SKY.x0} ${SKY.y})">
     <title></title>
-    <circle r="7.4" fill="var(--moon)" opacity=".13"/>
-    <!-- The whole disc, faintly: at new moon there is nothing else to see, and
-         the dark limb is the rest of the time the only clue to how full it is. -->
-    <circle r="${MOON_R}" fill="none" stroke="var(--moon)" stroke-width=".6" opacity=".45"/>
+    <!-- A glow, so the moon still has a position at new moon. It used to be a
+         faint outline of the whole disc, which was a mistake: at this size the
+         outline was legible and the crescent inside it was not, so every phase
+         read as full. -->
+    <circle r="8.4" fill="var(--moon)" opacity=".11"/>
     <path class="moon-lit" d="${moonPath(0.5, true)}" fill="var(--moon)"/>
   </g>
   <g class="sky-sun" transform="translate(${SKY.x0} ${SKY.y})">
@@ -1669,7 +1682,10 @@ function buildCards() {
     editEl.addEventListener("blur", () => { if (!scrub) stopEdit(); });
     editEl.addEventListener("keydown", e => {
       if (e.key === "Escape") { e.stopPropagation(); goLive(); }
-      else if (e.key === "Enter") { e.preventDefault(); editEl.select(); }
+      // Enter commits: the loose thing you typed is rewritten in the format you
+      // have chosen, so "6pm" settles as 18:00 or 6 pm rather than sitting there
+      // as your keystrokes.
+      else if (e.key === "Enter") { e.preventDefault(); normalizeEditor(); editEl.select(); }
     });
 
     // ---- click an hour mark to go there, the centre to come back to now
@@ -2156,7 +2172,9 @@ function paintDialRing(c, nowMs, data) {
     const up = sun2.polar ? sun2.polar === "day" : (ts >= sun2.sunrise && ts < sun2.sunset);
     const angle = ((p2.minutes % 720) / 720) * 360;
     const key = wxIcon(code, up);
-    const op = 0.8 - 0.45 * (i / Math.max(1, rows.length - 1));
+    // Lighter than the dial's own marks: the ring is context around the clock,
+    // not part of it, and in "both" there are two of these rings to keep quiet.
+    const op = 0.6 - 0.32 * (i / Math.max(1, rows.length - 1));
     const label = `${stamp(p2.minutes, state.hour12)} · ${WX_TEXT[key]}, ${fmtTemp(temp)}`;
     if (state.ring !== "temps") {
       const [x, y] = pol(iconR, angle);
@@ -2294,6 +2312,19 @@ function startEdit(i) {
   c.el.classList.add("editing");
   // A draggable card swallows text selection inside its own input.
   for (const k of cards) k.el.draggable = false;
+}
+
+/* Rewrite the open field as the instant the board is actually holding, in the
+   current 12/24-hour format. Read from the instant rather than from the text, so
+   whatever shorthand got typed is normalised rather than re-parsed, and switching
+   format while the field is open reformats it in place. */
+function normalizeEditor() {
+  if (editing === null) return;
+  const c = cards[editing];
+  if (!c || c.tedit.hidden) return;
+  const p = partsFor(c.city.tz, new Date(state.frozen != null ? state.frozen : currentMinute()));
+  c.tedit.value = stamp(p.h * 60 + p.mi, state.hour12);
+  c.tedit.classList.remove("bad");
 }
 
 function applyTyped(i) {
@@ -2695,6 +2726,7 @@ function applySetting(group, val) {
     store.set(LS.hour12, val);
     toolsRev++;                                 // forces the text to repaint
     for (const c of cards) c._wxKey = null;     // and the forecast tooltips
+    normalizeEditor();                          // including a field left open
   } else if (group === "solar" || group === "shade") {
     if (group === "solar") state.solar = val === "1"; else state.shade = val;
     store.set(LS[group], val);

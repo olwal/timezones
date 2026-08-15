@@ -151,6 +151,12 @@ when someone quotes a time in their own zone. The field is forgiving about forma
 what you have typed is not yet a valid time the underline turns red and the board holds
 the last good instant, so it does not lurch around mid-keystroke.
 
+`Enter` commits, and rewrites what you typed in the format you have chosen: `6pm`
+settles as `18:00`, or as `6 pm` on 12-hour. Switching that setting reformats a field
+left open, too. The value is read back from the instant the board is holding rather
+than from your keystrokes, so it is the committed time being shown, not a tidied
+version of the text.
+
 **Or step by the hour.** `←` and `→` move the board back and forward an hour at a
 time. They stay out of the way where they already mean something: inside the time
 field they move the caret, inside the settings menu they change the setting.
@@ -192,11 +198,22 @@ Two details worth knowing:
   right end and carries on leftwards through the trough to rise again where it
   started. They circle, rather than each crossing left to right in turn, which is what
   makes it read as one movement instead of two.
-- **The moon shows its real phase**, as it is seen from that city: a disc with the
-  terminator swept across it, so it thins to nothing at new moon and fills to a plain
-  white disc when full. South of the equator the lit limb swaps sides, because the
-  whole thing is seen upside down from there. Hovering names it, `Waxing gibbous,
-  63% lit`. This falls out of the same geometry as the positions, so at full moon the
+- **The moon shows its real phase**, as it is seen from that city: only the lit part,
+  since the dark limb is not visible in the sky either, with the terminator swept
+  across it so it thins to a crescent and fills to a plain disc when full. South of
+  the equator the lit limb swaps sides, because the whole thing is seen upside down
+  from there. Hovering names it, `Waxing gibbous, 63% lit`.
+
+  The disc is about 13px across, which sets a floor on what the shape can say: drawn
+  honestly, a 7% crescent is a sliver 0.8px wide, which is invisible beside anything
+  else on the card. An earlier version also outlined the whole disc faintly so that a
+  new moon still had a shape, and the result was the worst of both: the outline was
+  legible, the crescent inside it was not, and every phase read as full. So the
+  outline is gone, a glow marks the position instead, and the terminator is capped so
+  a thin crescent is drawn at about a tenth of the disc. Only the last 2% at either
+  end is exact: new moon draws nothing, which is what you can see of it, and full
+  draws a plain disc. The tooltip always has the true figure.
+- **Phase and position come from the same geometry**, so they agree: at full moon the
   moon rises as the sun sets and the two sit opposite each other on the dome, and at
   new moon they cross the sky together.
 - **The horizontal axis is progress, not clock angle.** The left end is always the
@@ -290,11 +307,13 @@ the whole ring appeared to shuffle arbitrarily whenever the time changed. Stoppi
 short leaves a gap at the current hour: the gap is now, and the ring reads clockwise
 from it.
 
-**Dial ring** chooses what the ring carries: `Icons`, `Temps`, or `Both`:
-temperatures on an outer ring with conditions on an inner one. The viewBox opens up
-to fit whichever is shown, allowing for the width of the labels as well as the radius
-of the ring, since a reading like `-10°` at the three o'clock position otherwise
-overhangs the box and gets clipped.
+**Dial ring** chooses what the ring carries: `Icons`, `Temps`, or `Both`, which is
+the default: temperatures on an outer ring with conditions on an inner one. The
+viewBox opens up to fit whichever is shown, allowing for the width of the labels as
+well as the radius of the ring, since a reading like `-10°` at the three o'clock
+position otherwise overhangs the box and gets clipped. Two rings is also why the
+default costs the dial some size, and why the ring is drawn lighter than the dial's
+own marks: it is context around the clock, not part of it.
 
 ![Temperatures and conditions on two rings](docs/ring-both.png)
 
