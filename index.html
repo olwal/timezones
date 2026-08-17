@@ -138,6 +138,24 @@ body {
 .seg button:hover[aria-checked="false"] { background: rgba(127,127,127,.14); }
 .seg button[aria-checked="true"] { background: var(--accent); color: #14140f; }
 
+/* Two pairs of hour pickers: the working day, and the window that counts as
+   night. Both were constants in the script until they turned out to be the two
+   numbers people most want to disagree with. */
+.hours {
+  display: grid; grid-template-columns: auto 1fr auto 1fr;
+  align-items: center; gap: 6px 7px;
+}
+.hours > span {
+  font-size: 9.5px; letter-spacing: .12em; text-transform: uppercase; color: var(--muted);
+}
+.hours > span.to { letter-spacing: .04em; text-transform: none; opacity: .8; }
+.hours select {
+  font: inherit; font-size: 11.5px; font-variant-numeric: tabular-nums;
+  width: 100%; color: var(--fg); background: transparent;
+  border: 1px solid var(--edge); border-radius: var(--r); padding: 3px 2px 3px 4px;
+}
+.hours select:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
 .btn {
   font: inherit; font-size: 11px; letter-spacing: .09em; text-transform: uppercase;
   color: var(--page-fg); background: transparent;
@@ -273,17 +291,10 @@ html.frozen .hand-sec { opacity: .3; }
   font-size: 10px; letter-spacing: .1em; text-transform: uppercase; color: var(--muted);
 }
 
-.sun {
-  display: flex; justify-content: space-between; align-items: center;
-  gap: 8px; margin-top: 1px;
-  font-size: 11px; letter-spacing: .06em; color: var(--muted);
-  font-variant-numeric: tabular-nums;
-}
-.sun .sun-polar, .sun .wx-now { margin: 0 auto; }
-.sun .wx-now { display: inline-flex; align-items: center; gap: 4px; }
-.sun .wx-now:empty { display: none; }
-.sun > span { display: inline-flex; align-items: center; gap: 4px; }
-.sun svg { width: 14px; height: 14px; flex: none; opacity: .9; }
+/* The sunrise and sunset times used to sit in a row of their own under the dome.
+   They are inside it now, at the two ends of the arc they belong to, which is
+   one row of chrome less and puts each time where its own horizon is. */
+.dome text { font-variant-numeric: tabular-nums; }
 
 /* Only the nearer of the two working-day boundaries, quietly, at the foot. */
 .next {
@@ -484,6 +495,20 @@ html[data-density="compact"] .add svg { width: 14px; height: 14px; }
       <button type="button" role="radio" data-val="1">Real sun</button>
     </div>
     <p class="hint" id="hint-solar"></p>
+  </section>
+  <section>
+    <h2>Hours</h2>
+    <div class="hours">
+      <span>Day</span>
+      <select data-hour="morning" aria-label="Working day starts"></select>
+      <span class="to">to</span>
+      <select data-hour="evening" aria-label="Working day ends"></select>
+      <span>Dark</span>
+      <select data-hour="nightFrom" aria-label="Dark from"></select>
+      <span class="to">to</span>
+      <select data-hour="nightTo" aria-label="Dark until"></select>
+    </div>
+    <p class="hint" id="hint-hours"></p>
   </section>
   <section>
     <h2>Weather forecast</h2>
@@ -1242,6 +1267,7 @@ const LS = {
   theme: "worldclock.theme",
   solar: "worldclock.solar",
   shade: "worldclock.shade",
+  hours: "worldclock.hours",
   weather: "worldclock.weather",
   ring: "worldclock.ring",
   units: "worldclock.units",
@@ -1313,16 +1339,31 @@ function persist() {
    ======================================================================= */
 // Kept legible at 14px by giving the pair two differences, not one: the arrow
 // direction, and a sun that sits on the horizon at dawn but has dipped below it
-// at dusk.
-const icon = (sun, arrow) => `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor"
+// at dusk. The horizon line inside the glyph is at y = 13.2 of the 16 grid,
+// which is what lets it be lined up with the dome's own horizon.
+const SUN_ICON_H = 13.2;
+const sunIconPaths = (sun, arrow) => `<path d="M1.4 ${SUN_ICON_H}h13.2"/>
+  <path d="${sun}"/><path d="M8 2.5v4.4"/><path d="${arrow}"/>`;
+const RISE_PATHS = sunIconPaths("M4.9 13.2a3.1 3.1 0 0 1 6.2 0", "M5.7 4.8 8 2.5l2.3 2.3");
+const SET_PATHS  = sunIconPaths("M4.3 13.2a4.4 4.4 0 0 1 7.4 0", "M5.7 4.6 8 6.9l2.3-2.3");
+
+const icon = paths => `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor"
   stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-  <path d="M1.4 13.2h13.2"/>
-  <path d="${sun}"/>
-  <path d="M8 2.5v4.4"/>
-  <path d="${arrow}"/>
-</svg>`;
-const ICON_SUNRISE = icon("M4.9 13.2a3.1 3.1 0 0 1 6.2 0", "M5.7 4.8 8 2.5l2.3 2.3");
-const ICON_SUNSET  = icon("M4.3 13.2a4.4 4.4 0 0 1 7.4 0", "M5.7 4.6 8 6.9l2.3-2.3");
+  ${paths}</svg>`;
+const ICON_SUNRISE = icon(RISE_PATHS);
+const ICON_SUNSET  = icon(SET_PATHS);
+
+/* The same glyph inside the dome, scaled and placed so that its own horizon
+   line falls exactly on the dome's. The dome's horizon then runs straight
+   through it and out the other side, which is what ties the label to the end of
+   the arc rather than leaving it floating underneath. */
+function sunIconAt(paths, cx, horizonY, size) {
+  const s = size / 16;
+  const cy = horizonY - (SUN_ICON_H - 8) * s;      // centre, given where 13.2 has to land
+  return `<g transform="translate(${cx} ${cy.toFixed(2)}) scale(${s.toFixed(4)}) translate(-8 -8)"
+    fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"
+    stroke-linejoin="round" opacity=".8">${paths}</g>`;
+}
 
 /* =======================================================================
    Weather — WMO codes from Open-Meteo, drawn as line icons on a 16x16 grid
@@ -1439,11 +1480,16 @@ const pol = (r, deg) => [CX + r * Math.sin(deg * RAD), CY - r * Math.cos(deg * R
 const SKY = {
   h: 100,       // viewBox height; the extra room is for the forecast icons
   y: 62,        // the horizon
-  x0: 18, x1: 182,
+  // The arc gives up the outer 16 units at each end to the sunrise and sunset
+  // labels, so each time sits at the end of the arc it belongs to instead of
+  // in a row underneath. The horizon line still runs the full width.
+  x0: 34, x1: 166,
+  mark: 14,     // centre of the two label slots, in from either edge
   rise: 42,     // how high a body climbs above the horizon at its transit
   dip: 15       // how far it dips below at its anti-transit
 };
-const skyX = t => 100 - 82 * Math.cos(Math.PI * t);
+SKY.r = (SKY.x1 - SKY.x0) / 2;
+const skyX = t => 100 - SKY.r * Math.cos(Math.PI * t);
 const skyY = (t, up) => SKY.y + (up ? -SKY.rise : SKY.dip) * Math.sin(Math.PI * t);
 // Below the horizon the direction of travel reverses, which is what closes the
 // circle: rise at the left, set at the right, back to the left underneath.
@@ -1509,27 +1555,46 @@ function skyBodies() {
       x2="${(s * 6.9).toFixed(2)}" y2="${(-c * 6.9).toFixed(2)}"
       stroke="var(--sun)" stroke-width="1.15" stroke-linecap="round"/>`;
   }
+  /* Each body is a positioned group holding a dimmable inner group, so the glyph
+     can go quiet under the horizon. The current conditions and the temperature
+     ride along with the sun but sit outside that inner group: they describe now,
+     not what is visible, so they stay legible at midnight.
+
+     Nothing here draws a sun as such. The sun's glyph IS the current conditions,
+     and a clear sky's conditions are a rayed sun, so the two are the same thing
+     whenever the sky is clear. When it is not, the sun becomes the cloud or the
+     rain that is actually there, keeping its warm halo so its position still
+     reads. */
   return `
   <g class="sky-moon" transform="translate(${SKY.x0} ${SKY.y})">
-    <title></title>
-    <!-- A glow, so the moon still has a position at new moon. It used to be a
-         faint outline of the whole disc, which was a mistake: at this size the
-         outline was legible and the crescent inside it was not, so every phase
-         read as full. -->
-    <circle r="8.4" fill="var(--moon)" opacity=".11"/>
-    <path class="moon-lit" d="${moonPath(0.5, true)}" fill="var(--moon)"/>
+    <g class="moon-body">
+      <title></title>
+      <!-- A glow, so the moon still has a position at new moon. It used to be a
+           faint outline of the whole disc, which was a mistake: at this size the
+           outline was legible and the crescent inside it was not, so every phase
+           read as full. -->
+      <circle r="8.4" fill="var(--moon)" opacity=".11"/>
+      <path class="moon-lit" d="${moonPath(0.5, true)}" fill="var(--moon)"/>
+    </g>
   </g>
   <g class="sky-sun" transform="translate(${SKY.x0} ${SKY.y})">
-    <circle r="8.4" fill="var(--sun)" opacity=".17"/>
-    ${rays}
-    <circle r="3.4" fill="var(--sun)"/>
+    <g class="sun-body">
+      <circle r="8.4" fill="var(--sun)" opacity=".17"/>
+      <g class="sun-clear">${rays}<circle r="3.4" fill="var(--sun)"/></g>
+    </g>
+    <g class="sun-wx"></g>
+    <text class="sun-temp" x="11" y="0.5" text-anchor="start" dominant-baseline="central"
+      font-size="9.5" font-weight="500" fill="currentColor" opacity=".75"></text>
   </g>`;
 }
 
 function domeSVG() {
-  const { y, x0, x1, rise, dip } = SKY;
-  const day = `M ${x0} ${y} A 82 ${rise} 0 0 1 ${x1} ${y}`;
-  const night = `M ${x0} ${y} A 82 ${dip} 0 0 0 ${x1} ${y}`;
+  const { y, x0, x1, r, rise, dip, mark } = SKY;
+  const day = `M ${x0} ${y} A ${r} ${rise} 0 0 1 ${x1} ${y}`;
+  const night = `M ${x0} ${y} A ${r} ${dip} 0 0 0 ${x1} ${y}`;
+  const label = (cls, x) => `<text class="${cls}" x="${x}" y="${y + 11.5}"
+    text-anchor="middle" dominant-baseline="central" font-size="8.5"
+    fill="currentColor" opacity=".68"></text>`;
   return `
   <path class="dome-fill" d="${day} Z" fill="var(--sun)" opacity=".08"/>
   <path class="dome-day" d="${day}" fill="none" stroke="var(--sun)" stroke-width="1.5" opacity=".55"/>
@@ -1538,6 +1603,19 @@ function domeSVG() {
   <line x1="6" y1="${y}" x2="194" y2="${y}" stroke="currentColor" stroke-width="1" opacity=".28"/>
   <line x1="${x0}" y1="${y - 4}" x2="${x0}" y2="${y + 4}" stroke="currentColor" stroke-width="1" opacity=".4"/>
   <line x1="${x1}" y1="${y - 4}" x2="${x1}" y2="${y + 4}" stroke="currentColor" stroke-width="1" opacity=".4"/>
+  <!-- Sunrise at the rising end, sunset at the setting end. The glyph's own
+       horizon sits on the dome's, so the line runs through it. -->
+  <g class="rise-mark"><title>Sunrise</title>
+    ${sunIconAt(RISE_PATHS, mark, y, 15)}${label("rise-t", mark)}</g>
+  <g class="set-mark"><title>Sunset</title>
+    ${sunIconAt(SET_PATHS, 200 - mark, y, 15)}${label("set-t", 200 - mark)}</g>
+  <!-- Polar day and night have no two times to print, so one label takes the
+       middle. The backing rect keeps it off the dashed trough. -->
+  <g class="polar-mark" style="display:none">
+    <rect class="polar-bg" x="64" y="${y + 5}" width="72" height="13" rx="3" fill="var(--face)"/>
+    <text class="polar-t" x="100" y="${y + 11.5}" text-anchor="middle" dominant-baseline="central"
+      font-size="8.5" fill="currentColor" opacity=".68"></text>
+  </g>
   <g class="wx"></g>
   ${skyBodies()}`;
 }
@@ -1663,12 +1741,6 @@ function buildCards() {
       <div class="mini-wx"></div>
       <div class="skyband">
         <svg class="dome" viewBox="0 0 200 ${SKY.h}" aria-hidden="true">${domeSVG()}</svg>
-        <div class="sun">
-          <span class="sun-rise" title="Sunrise">${ICON_SUNRISE}<span class="rise"></span></span>
-          <span class="sun-polar" hidden></span>
-          <span class="wx-now"></span>
-          <span class="sun-set" title="Sunset"><span class="set"></span>${ICON_SUNSET}</span>
-        </div>
       </div>
       <div class="next"></div>`;
     el.querySelector(".card__name").addEventListener("click", () => openPicker(i));
@@ -1737,11 +1809,12 @@ function buildCards() {
       time: el.querySelector("time"),
       tedit: el.querySelector(".tedit"),
       rel: el.querySelector(".rel"),
-      rise: el.querySelector(".rise"),
-      set: el.querySelector(".set"),
-      sunRise: el.querySelector(".sun-rise"),
-      sunSet: el.querySelector(".sun-set"),
-      sunPolar: el.querySelector(".sun-polar"),
+      rise: el.querySelector(".rise-t"),
+      set: el.querySelector(".set-t"),
+      sunRise: el.querySelector(".rise-mark"),
+      sunSet: el.querySelector(".set-mark"),
+      sunPolar: el.querySelector(".polar-mark"),
+      polarTxt: el.querySelector(".polar-t"),
       hourHand: el.querySelector(".hand-hour"),
       minHand: el.querySelector(".hand-min"),
       secHand: el.querySelector(".hand-sec"),
@@ -1749,9 +1822,13 @@ function buildCards() {
       domeNight: el.querySelector(".dome-night"),
       domeFill: el.querySelector(".dome-fill"),
       wx: el.querySelector(".wx"),
-      wxNow: el.querySelector(".wx-now"),
       sunG: el.querySelector(".sky-sun"),
+      sunBody: el.querySelector(".sun-body"),
+      sunClear: el.querySelector(".sun-clear"),
+      sunWx: el.querySelector(".sun-wx"),
+      sunTemp: el.querySelector(".sun-temp"),
       moonG: el.querySelector(".sky-moon"),
+      moonBody: el.querySelector(".moon-body"),
       moonLit: el.querySelector(".moon-lit"),
       moonTitle: el.querySelector(".sky-moon title"),
       ghostHand: el.querySelector(".ghost-hand"),
@@ -1775,7 +1852,10 @@ function buildCards() {
 }
 
 /* -----------------------------------------------------------------------
-   Configuration — the only numbers you need to touch to reshape the day.
+   Configuration — the shape of the day. The first four are the defaults for the
+   pickers in the settings menu rather than fixed values, since whose working day
+   runs 08:00 to 18:00, and what counts as night, is exactly the sort of thing
+   nobody else agrees with. The rest stay constants.
    ----------------------------------------------------------------------- */
 const CONFIG = {
   morning:   8 * 60,   // 08:00 — start of the working day
@@ -1786,7 +1866,23 @@ const CONFIG = {
   dayAbove:       2,   // sun this high  = full daylight        ("solar" mode)
   nightBelow:    -6    // sun this low   = full dark (civil twilight)
 };
-const isNight = m => m >= CONFIG.nightFrom || m < CONFIG.nightTo;
+const HOUR_KEYS = ["morning", "evening", "nightFrom", "nightTo"];
+// Stored as four minute counts. A malformed or out-of-range list is ignored
+// wholesale rather than half applied, which would leave a stranger shape.
+(function loadHours() {
+  const v = store.get(LS.hours, "").split(",").map(Number);
+  if (v.length !== HOUR_KEYS.length) return;
+  if (v.some(n => !Number.isFinite(n) || n < 0 || n > 1439)) return;
+  HOUR_KEYS.forEach((k, i) => { CONFIG[k] = v[i]; });
+})();
+
+/* A window on the 24-hour circle, which may or may not cross midnight, so that
+   either order of the two ends means something: 20:00 to 06:00 is a night, and
+   06:00 to 20:00 would be a day. Two ends the same is no window at all, rather
+   than the whole circle, which is what the old form silently returned. */
+const inWindow = (m, from, to) => from === to ? false
+  : from > to ? (m >= from || m < to) : (m >= from && m < to);
+const isNight = m => inWindow(m, CONFIG.nightFrom, CONFIG.nightTo);
 
 const clamp01 = v => v < 0 ? 0 : v > 1 ? 1 : v;
 const smooth = t => t * t * (3 - 2 * t);
@@ -1913,8 +2009,8 @@ function update() {
     // ---- sun and moon both creep round the dome in real time, each on its own
     // orbit, so one of the two is always under the horizon.
     const lst = siderealTime(days, c.city.lon);
-    placeBody(c.sunG, domeSpot(c.city.lat, sEq.dec, lst - sEq.ra, SUN_H0));
-    placeBody(c.moonG, domeSpot(c.city.lat, mEq.dec, lst - mEq.ra, MOON_H0));
+    placeBody(c.sunG, c.sunBody, domeSpot(c.city.lat, sEq.dec, lst - sEq.ra, SUN_H0), c.sunTemp);
+    placeBody(c.moonG, c.moonBody, domeSpot(c.city.lat, mEq.dec, lst - mEq.ra, MOON_H0));
   }
 
   // ---- page skin: on auto, it follows night where the viewer is
@@ -1935,13 +2031,25 @@ function update() {
   requestAnimationFrame(update);
 }
 
-// A body below the horizon is out of sight rather than gone, so it goes quiet
-// instead of disappearing: the pair still reads as one circling movement.
-function placeBody(g, spot) {
-  g.setAttribute("transform",
-    `translate(${spanX(spot.t, spot.up).toFixed(2)} ${skyY(spot.t, spot.up).toFixed(2)})`);
+// A body below the horizon is out of sight rather than gone, so its glyph goes
+// quiet instead of disappearing: the pair still reads as one circling movement.
+// Only the inner group dims, which is how the temperature stays readable while
+// the sun that carries it is under the horizon.
+function placeBody(g, inner, spot, temp) {
+  const x = spanX(spot.t, spot.up);
+  g.setAttribute("transform", `translate(${x.toFixed(2)} ${skyY(spot.t, spot.up).toFixed(2)})`);
   const op = spot.up ? "" : ".38";
-  if (g._op !== op) { g._op = op; g.style.opacity = op; }
+  if (inner._op !== op) { inner._op = op; inner.style.opacity = op; }
+  // The temperature sits on the inward side of the body, so that near the ends
+  // it never reaches the sunrise and sunset labels or the edge of the card.
+  if (temp) {
+    const left = x > 100;
+    if (temp._left !== left) {
+      temp._left = left;
+      temp.setAttribute("x", left ? -11 : 11);
+      temp.setAttribute("text-anchor", left ? "end" : "start");
+    }
+  }
 }
 
 /* The tab title carries the first few clocks, so a pinned tab or a hover over
@@ -1974,9 +2082,11 @@ function paintSlow(c, p, nowMs, viewerDay) {
     sunUp = sun.polar === "day";
     from = p.midnightUTC;
     to = p.midnightUTC + 86400000;
-    c.sunRise.hidden = c.sunSet.hidden = true;
-    c.sunPolar.hidden = false;
-    c.sunPolar.textContent = sunUp ? "midnight sun" : "polar night";
+    // These live in the SVG now, so they are shown and hidden with display:
+    // the HTML hidden attribute is not reliable across namespaces.
+    c.sunRise.style.display = c.sunSet.style.display = "none";
+    c.sunPolar.style.display = "";
+    c.polarTxt.textContent = sunUp ? "midnight sun" : "polar night";
   } else {
     sunUp = nowMs >= sun.sunrise && nowMs < sun.sunset;
     if (sunUp) {
@@ -1993,8 +2103,8 @@ function paintSlow(c, p, nowMs, viewerDay) {
     }
     c.rise.textContent = stamp(wrapDay((sun.sunrise - p.midnightUTC) / 60000), state.hour12);
     c.set.textContent = stamp(wrapDay((sun.sunset - p.midnightUTC) / 60000), state.hour12);
-    c.sunRise.hidden = c.sunSet.hidden = false;
-    c.sunPolar.hidden = true;
+    c.sunRise.style.display = c.sunSet.style.display = "";
+    c.sunPolar.style.display = "none";
   }
   c._spanFrom = from; c._spanTo = to; c._sunUp = sunUp;
 
@@ -2059,6 +2169,26 @@ function paintSlow(c, p, nowMs, viewerDay) {
       stamp(morningNext ? morning : evening, state.hour12);
 }
 
+/* The current conditions replace the sun's own glyph, and the temperature is
+   written beside it, the same pairing the dial ring uses. The day form of the
+   icon is used at all hours on purpose: the night form of "clear" is a moon,
+   which would put a second moon on the dome a few units from the real one.
+   A rayed sun in the trough reads correctly as it is: the sun is down there,
+   and the sky is clear. */
+function showNow(c, code, temp) {
+  const key = code == null ? null : wxIcon(code, true);
+  const glyph = key === null || key === "clear" ? "" :
+    wxGlyph(key, 0, 0, 13.5, "currentColor", WX_TEXT[key]);
+  if (c._nowKey !== key) {
+    c._nowKey = key;
+    c.sunWx.innerHTML = glyph;
+    // The rayed sun steps aside only when something else is there to draw.
+    c.sunClear.style.display = glyph ? "none" : "";
+  }
+  const label = temp == null ? "" : fmtTemp(temp);
+  if (c.sunTemp.textContent !== label) c.sunTemp.textContent = label;
+}
+
 /* -----------------------------------------------------------------------
    Forecast icons ride the dome alongside the sun, so they cover the span we
    are currently in: now until sunset by day, now until sunrise by night.
@@ -2069,7 +2199,8 @@ function paintWeather(c, nowMs, sunUp) {
     if (c._wxKey !== "off") {
       c._wxKey = "off";
       c.wx.textContent = ""; c.wxRing.textContent = "";
-      c.wxNow.textContent = ""; c.miniWx.textContent = "";
+      c.miniWx.textContent = "";
+      showNow(c, null, null);
     }
     return;
   }
@@ -2086,9 +2217,9 @@ function paintWeather(c, nowMs, sunUp) {
   if (c._wxKey === key) return;
   c._wxKey = key;
 
-  // Current conditions go in the middle of the sunrise/sunset row either way.
+  // Current conditions become the sun itself, wherever it happens to be.
   const nowRow = data.rows.find(r => r[0] > nowMs - 3600000 && r[0] <= nowMs + 1800000);
-  c.wxNow.innerHTML = nowRow ? wxSpan(wxIcon(nowRow[1], sunUp), fmtTemp(nowRow[2])) : "";
+  showNow(c, nowRow ? nowRow[1] : null, nowRow ? nowRow[2] : null);
 
   // Compact tiles carry the next three hours as a strip instead of a ring.
   if (compact()) {
@@ -2191,12 +2322,6 @@ function paintDialRing(c, nowMs, data) {
     }
   });
   c.wxRing.innerHTML = out.join("");
-}
-
-function wxSpan(key, label) {
-  return `<svg viewBox="0 0 16 16" aria-hidden="true">${
-    `<g fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"
-       stroke-linejoin="round">${WX[key]}</g>`}</svg><span>${label}</span>`;
 }
 
 /* =======================================================================
@@ -2669,9 +2794,13 @@ const HINTS = {
     dial: "Only the watch face darkens. The cards keep the page theme, which is steadier on a big board."
   },
   solar: {
-    "0": "Every city darkens between 20:00 and 06:00. Identical everywhere, so cards are easy to compare.",
-    "1": "Each city darkens at its own dusk, following the real sun. Correct at high latitudes."
+    // The window is a setting now, so this one is filled in from it.
+    "0": h => `Every city darkens between ${h[0]} and ${h[1]}. Identical everywhere, ` +
+              "so cards are easy to compare.",
+    "1": () => "Each city darkens at its own dusk, following the real sun. Correct at high latitudes."
   },
+  hours: "The working day drives the countdown at the foot of each card. The dark hours " +
+         "are what shades them, on Working hours above.",
   weather: {
     dial: "The coming hours, one per hour, around the outside of the dial.",
     dome: "The hours left in the current day or night, along the sky dome.",
@@ -2698,6 +2827,27 @@ const settingValue = group =>
   group === "units" ? state.units :
   group === "density" ? state.density : state.theme;
 
+/* The hour pickers. Their labels follow the 12/24-hour setting, so the options
+   are rebuilt when that changes and only re-selected otherwise: rebuilding on
+   every sync would shut an open dropdown under the pointer. */
+let hourFmt = null;
+function fillHourSelects() {
+  const rebuild = hourFmt !== state.hour12;
+  hourFmt = state.hour12;
+  for (const sel of settings.querySelectorAll("select[data-hour]")) {
+    if (rebuild) {
+      sel.textContent = "";
+      for (let h = 0; h < 24; h++) {
+        const o = document.createElement("option");
+        o.value = String(h * 60);
+        o.textContent = stamp(h * 60, state.hour12);
+        sel.appendChild(o);
+      }
+    }
+    sel.value = String(CONFIG[sel.dataset.hour]);
+  }
+}
+
 function syncTools() {
   for (const seg of settings.querySelectorAll(".seg")) {
     const current = settingValue(seg.dataset.group);
@@ -2707,8 +2857,11 @@ function syncTools() {
       b.tabIndex = on ? 0 : -1;
     }
   }
+  fillHourSelects();
+  const dark = [stamp(CONFIG.nightFrom, state.hour12), stamp(CONFIG.nightTo, state.hour12)];
   document.getElementById("hint-shade").textContent = HINTS.shade[state.shade];
-  document.getElementById("hint-solar").textContent = HINTS.solar[settingValue("solar")];
+  document.getElementById("hint-hours").textContent = HINTS.hours;
+  document.getElementById("hint-solar").textContent = HINTS.solar[settingValue("solar")](dark);
   document.getElementById("hint-weather").textContent = HINTS.weather[state.weather];
   document.getElementById("hint-ring").textContent = HINTS.ring[state.ring];
   document.getElementById("hint-density").textContent = HINTS.density[state.density];
@@ -2755,6 +2908,19 @@ function applySetting(group, val) {
 settings.addEventListener("click", e => {
   const b = e.target.closest("button[role=radio]");
   if (b) applySetting(b.parentElement.dataset.group, b.dataset.val);
+});
+
+// The hour pickers. Every card's darkness ramp and countdown is derived from
+// these, so the whole board is re-inked rather than waiting for the next
+// perceptible change.
+settings.addEventListener("change", e => {
+  const sel = e.target.closest("select[data-hour]");
+  if (!sel) return;
+  CONFIG[sel.dataset.hour] = +sel.value;
+  store.set(LS.hours, HOUR_KEYS.map(k => CONFIG[k]).join(","));
+  for (const c of cards) c._k = undefined;
+  repaintAll();
+  syncTools();
 });
 
 // Arrow keys move through a group, as a radiogroup is expected to.

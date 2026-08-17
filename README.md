@@ -219,9 +219,28 @@ Two details worth knowing:
 - **The horizontal axis is progress, not clock angle.** The left end is always the
   rising horizon and the right end the setting one, however long the day happens to
   be, so the sun at the apex means solar noon and halfway up the left slope means the
-  morning is half gone. Sunrise and sunset times are printed at the two ends.
-  This is deliberately *not* a clock scale: an earlier version wrapped a 24-hour
-  ring around the 12-hour dial, and the two never lining up was confusing.
+  morning is half gone. This is deliberately *not* a clock scale: an earlier version
+  wrapped a 24-hour ring around the 12-hour dial, and the two never lining up was
+  confusing.
+- **Sunrise and sunset sit at the ends of the arc they belong to**, on the horizon
+  line, rather than in a row of their own underneath. Each glyph contains a horizon
+  of its own, a third of the way up its box, and it is placed so that line falls
+  exactly on the dome's: the dome's horizon runs straight through the icon and out
+  the other side, which is what ties the time to its end of the arc. The time goes
+  below in a smaller face. The arc gives up 16 units at each end to make room, and
+  the horizon line still runs the full width, so the labels sit on the part of it
+  that was already extending past the arc.
+- **The sun's glyph is the current conditions**, with the temperature written beside
+  it, the same pairing the dial ring uses. This costs nothing when the sky is clear,
+  since a clear sky's icon is a rayed sun already, and when it is not clear the sun
+  becomes the cloud or the rain that is actually there, keeping its warm halo so its
+  position still reads. The day form of the icon is used at every hour on purpose:
+  the night form of "clear" is a moon, which would put a second moon on the dome a
+  few units from the real one. A rayed sun in the trough is not wrong, it says the
+  sun is down there and the sky is clear. The temperature stays on the inward side
+  of the body so it never reaches the sunrise and sunset labels, and it does not dim
+  with the glyph when the sun is under the horizon, since it describes now rather
+  than what is visible.
 - **Both bodies move in real time**, repositioned every frame.
 - **The second hand floats**, a true continuous sweep driven off the epoch so every
   card is in lockstep. The minute and hour hands drift continuously too.
@@ -267,19 +286,37 @@ Two details worth knowing:
 
 ## Configuration
 
-Four constants at the top of the script define the shape of the day:
+**Hours** in the settings menu sets the shape of the day: the working day, which drives
+the countdown at the foot of each card, and the dark hours, which are what shades them
+on *Working hours*. Four hour pickers, labelled in whichever format you have chosen, and
+persisted like every other setting.
+
+![The hour pickers in the settings menu](docs/settings.png)
+
+The window that counts as night is read as a window on the 24-hour circle rather than
+as an overnight span, so either order of its two ends means something: `20:00` to `06:00`
+is a night, and `06:00` to `20:00` would be a day. Setting both ends the same means no
+dark window at all, where the old form silently returned the whole circle and left every
+card dark forever.
+
+`CONFIG` at the top of the script holds the defaults for those four, plus the constants
+that stay constants:
 
 ```js
 const CONFIG = {
-  morning:   8 * 60,   // 08:00, start of the working day
-  evening:  18 * 60,   // 18:00, end of the working day
-  nightFrom: 20 * 60,  // 20:00, the shading goes fully dark  ("hours" mode)
-  nightTo:    6 * 60,  // 06:00, and fully light again
+  morning:   8 * 60,   // 08:00, start of the working day     ) defaults for
+  evening:  18 * 60,   // 18:00, end of the working day       ) the four
+  nightFrom: 20 * 60,  // 20:00, the shading goes fully dark  ) pickers in
+  nightTo:    6 * 60,  // 06:00, and fully light again        ) the menu
   fade:          45,   // minutes either side of those, spent fading
   dayAbove:       2,   // sun this high  = full daylight        ("solar" mode)
   nightBelow:    -6    // sun this low   = full dark (civil twilight)
 };
 ```
+
+A short fade window with a long dark one is fine; the reverse degrades gracefully rather
+than breaking, since `darkness` measures the distance to the nearer end of the window and
+simply never reaches full dark if the window is shorter than twice the fade.
 
 On *Working hours* the shading is on fixed hours while the sun and moon follow real
 astronomy, so the two can legitimately disagree: Tokyo at 05:21 shows a dark card with
@@ -289,8 +326,8 @@ behaving differently.
 
 ## Weather
 
-Three placements, all of which draw current conditions and temperature in the middle
-of the label row.
+Three placements for the forecast. Current conditions are not one of them: they are
+always the sun's own glyph on the dome, with the temperature beside it, as above.
 
 **Dial (default)**: a ring outside the dial, one entry per coming hour. The analog
 face already maps hours to angles, so each forecast hour sits at its own hour
