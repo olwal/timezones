@@ -120,7 +120,10 @@ body {
 /* The dial is a set of targets: click an hour mark to go there, the centre to
    come back to now. touch-action stays permissive so a tap on a dial does not
    cost the page its scroll. */
-.clock { cursor: pointer; touch-action: manipulation; }
+.clock {
+  cursor: pointer; touch-action: manipulation;
+  user-select: none; -webkit-user-select: none;
+}
 
 /* Segmented control: every mode visible at once, rather than a button you
    have to click repeatedly to discover what it cycles through. */
@@ -361,14 +364,21 @@ html[data-density="compact"] .add { min-height: 74px; font-size: 9px; letter-spa
 html[data-density="compact"] .add svg { width: 14px; height: 14px; }
 
 /* ------------------------------------------------------------- add tile */
+/* The dock's plus is the way to add a city. This tile stays as the second way,
+   in the gap after the last card where a new one would appear, but it keeps out
+   of the composition until the pointer goes looking for it: a dashed rectangle
+   sitting on every board permanently was the loudest thing on a quiet page.
+   It still holds its grid cell, so nothing shifts when it fades in. */
 .add {
   border: 1px dashed var(--page-line); border-radius: 10px; background: transparent;
   color: var(--page-muted); font: inherit; font-size: 11px; letter-spacing: .12em;
   text-transform: uppercase; cursor: pointer; min-height: 148px; align-self: start;
   display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px;
-  transition: color .15s ease, border-color .15s ease;
+  opacity: 0; transition: opacity .18s ease, color .15s ease, border-color .15s ease;
 }
-.add:hover { color: var(--page-fg); border-color: currentColor; }
+.add:hover, .add:focus-visible { opacity: 1; color: var(--page-fg); border-color: currentColor; }
+/* An unfocused window is being read, not used, so nothing invites a click. */
+html.blurred .add { opacity: 0; }
 .add svg { width: 22px; height: 22px; pointer-events: none; }
 
 /* -------------------------------------------------------------- picker */
@@ -444,6 +454,12 @@ html[data-density="compact"] .add svg { width: 14px; height: 14px; }
 <main class="grid" id="grid"></main>
 
 <div class="dock" id="dock">
+  <button class="fab" id="addFab" title="Add a city" aria-label="Add a city">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"
+      stroke-linecap="round" aria-hidden="true">
+      <path d="M12 5v14"/><path d="M5 12h14"/>
+    </svg>
+  </button>
   <button class="fab" id="share" title="Copy a link to this board" aria-label="Copy a link to this board">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"
       stroke-linecap="round" aria-hidden="true">
@@ -465,6 +481,15 @@ html[data-density="compact"] .add svg { width: 14px; height: 14px; }
 
 <div class="popover" id="settings" hidden>
   <section>
+    <h2>Preset</h2>
+    <div class="seg" role="radiogroup" aria-label="Preset" data-group="preset">
+      <button type="button" role="radio" data-val="classic">Classic</button>
+      <button type="button" role="radio" data-val="minimal">Minimal</button>
+      <button type="button" role="radio" data-val="weather">Weather</button>
+    </div>
+    <p class="hint" id="hint-preset"></p>
+  </section>
+  <section>
     <h2>Density</h2>
     <div class="seg" role="radiogroup" aria-label="Density" data-group="density">
       <button type="button" role="radio" data-val="auto">Auto</button>
@@ -479,6 +504,30 @@ html[data-density="compact"] .add svg { width: 14px; height: 14px; }
       <button type="button" role="radio" data-val="0">24-hour</button>
       <button type="button" role="radio" data-val="1">12-hour</button>
     </div>
+  </section>
+  <section>
+    <h2>Date</h2>
+    <div class="seg" role="radiogroup" aria-label="Date format" data-group="date">
+      <button type="button" role="radio" data-val="day">Mon</button>
+      <button type="button" role="radio" data-val="short">Mon 7 Jul</button>
+      <button type="button" role="radio" data-val="iso">2026-07-07</button>
+    </div>
+  </section>
+  <section>
+    <h2>Numerals</h2>
+    <div class="seg" role="radiogroup" aria-label="Numerals on the dial" data-group="nums">
+      <button type="button" role="radio" data-val="none">None</button>
+      <button type="button" role="radio" data-val="quarters">12 3 6 9</button>
+      <button type="button" role="radio" data-val="all">All 12</button>
+    </div>
+  </section>
+  <section>
+    <h2>Dial marks</h2>
+    <div class="seg" role="radiogroup" aria-label="Marks on the dial" data-group="ticks">
+      <button type="button" role="radio" data-val="1">On</button>
+      <button type="button" role="radio" data-val="0">Off</button>
+    </div>
+    <p class="hint" id="hint-ticks"></p>
   </section>
   <section>
     <h2>Night darkens</h2>
@@ -1100,6 +1149,20 @@ function offsetLabel(min) {
 // reading "mercredi" beside "TILL MORNING 08:00" would be worse than either.
 const DAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday",
                    "Friday", "Saturday"];
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
+                "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const pad2 = n => String(n).padStart(2, "0");
+
+/* The date beside the time. A weekday alone answers "which day is that there",
+   which is most of it, but not "which date", and once a board spans a date line
+   both questions come up. Three formats: the day on its own, the day with the
+   date, and ISO for when it has to be unambiguous. */
+function dateLabel(p, cardDay) {
+  const day = DAY_NAMES[new Date(cardDay).getUTCDay()];
+  if (state.date === "day") return day;
+  if (state.date === "iso") return p.y + "-" + pad2(p.mo) + "-" + pad2(p.d);
+  return day.slice(0, 3) + " " + p.d + " " + MONTHS[p.mo - 1];
+}
 
 function clockText(h, mi, hour12) {
   if (!hour12) return { t: String(h).padStart(2, "0") + ":" + String(mi).padStart(2, "0"), suffix: "" };
@@ -1268,6 +1331,9 @@ const LS = {
   solar: "worldclock.solar",
   shade: "worldclock.shade",
   hours: "worldclock.hours",
+  date: "worldclock.date",
+  nums: "worldclock.nums",
+  ticks: "worldclock.ticks",
   weather: "worldclock.weather",
   ring: "worldclock.ring",
   units: "worldclock.units",
@@ -1298,6 +1364,9 @@ let state = {
   theme: store.get(LS.theme, "auto"),      // auto | light | dark
   solar: store.get(LS.solar, "0") === "1", // false = fixed evening hours
   shade: store.get(LS.shade, "card"),      // card | dial: what darkens at night
+  date: store.get(LS.date, "short"),       // day | short | iso
+  nums: store.get(LS.nums, "quarters"),    // none | quarters | all
+  ticks: store.get(LS.ticks, "1") === "1", // minute and hour marks on the dial
   weather: store.get(LS.weather, "dial"),  // dial | dome | off
   ring: store.get(LS.ring, "both"),        // icons | temps | both
   units: store.get(LS.units, "c"),         // c | f
@@ -1310,6 +1379,8 @@ const COMPACT_BELOW = 560;
 const compact = () => state.density === "compact" ||
   (state.density === "auto" && window.innerWidth < COMPACT_BELOW);
 if (!["card", "dial"].includes(state.shade)) state.shade = "card";
+if (!["day", "short", "iso"].includes(state.date)) state.date = "short";
+if (!["none", "quarters", "all"].includes(state.nums)) state.nums = "quarters";
 if (!["dial", "dome", "off"].includes(state.weather)) state.weather = "dial";
 if (!["icons", "temps", "both"].includes(state.ring)) state.ring = "icons";
 if (!["c", "f"].includes(state.units)) state.units = "c";
@@ -1644,22 +1715,38 @@ function clockBox() {
            px: Math.round(span * (218 / 226)) };
 }
 
+/* What the face carries is two settings. Numerals can be none, the quarters, or
+   all twelve; the marks can go entirely. With the marks gone the numerals move
+   out to where they were, since that band is the natural place to read a dial
+   and leaving it empty makes the face look unfinished rather than clean. All
+   twelve numerals get a smaller face, because at this size twelve of them at
+   full size crowd the ring. */
+const NUM_ANGLES = {
+  none: [],
+  quarters: [[12, 0], [3, 90], [6, 180], [9, 270]],
+  all: Array.from({ length: 12 }, (_, i) => [i === 0 ? 12 : i, i * 30])
+};
+
 function faceSVG() {
   let ticks = "";
-  for (let i = 0; i < 60; i++) {
-    const hour = i % 5 === 0;
-    const a = i * 6;
-    const [x1, y1] = pol(hour ? 76 : 80.5, a);
-    const [x2, y2] = pol(85, a);
-    ticks += `<line class="${hour ? "tick-hour" : "tick-min"}"
-      x1="${x1.toFixed(2)}" y1="${y1.toFixed(2)}" x2="${x2.toFixed(2)}" y2="${y2.toFixed(2)}"
-      stroke="var(--dial-fg)" stroke-width="${hour ? 2.6 : 1}" opacity="${hour ? .92 : .3}" stroke-linecap="butt"/>`;
+  if (state.ticks) {
+    for (let i = 0; i < 60; i++) {
+      const hour = i % 5 === 0;
+      const a = i * 6;
+      const [x1, y1] = pol(hour ? 76 : 80.5, a);
+      const [x2, y2] = pol(85, a);
+      ticks += `<line class="${hour ? "tick-hour" : "tick-min"}"
+        x1="${x1.toFixed(2)}" y1="${y1.toFixed(2)}" x2="${x2.toFixed(2)}" y2="${y2.toFixed(2)}"
+        stroke="var(--dial-fg)" stroke-width="${hour ? 2.6 : 1}" opacity="${hour ? .92 : .3}" stroke-linecap="butt"/>`;
+    }
   }
   let nums = "";
-  for (const [n, a] of [[12, 0], [3, 90], [6, 180], [9, 270]]) {
-    const [x, y] = pol(63, a);
+  const numR = state.ticks ? 63 : 78;
+  const numSize = state.nums === "all" ? 10.5 : 12;
+  for (const [n, a] of NUM_ANGLES[state.nums]) {
+    const [x, y] = pol(numR, a);
     nums += `<text x="${x.toFixed(2)}" y="${y.toFixed(2)}" text-anchor="middle" dominant-baseline="central"
-      font-size="12" font-weight="500" fill="var(--dial-fg)" opacity=".8">${n}</text>`;
+      font-size="${numSize}" font-weight="500" fill="var(--dial-fg)" opacity=".8">${n}</text>`;
   }
   return `
   <circle cx="${CX}" cy="${CY}" r="${DIAL}" fill="var(--dial)" stroke="var(--dial-edge)" stroke-width="1"/>
@@ -1751,13 +1838,16 @@ function buildCards() {
     const editEl = el.querySelector(".tedit");
     timeEl.addEventListener("click", () => startEdit(i));
     editEl.addEventListener("input", () => applyTyped(i));
-    editEl.addEventListener("blur", () => { if (!scrub) stopEdit(); });
+    // Losing focus commits: the time typed stays on the board. Throwing it away
+    // was the old behaviour and it made the field feel like a trap.
+    editEl.addEventListener("blur", () => { if (!scrub) closeEditor(true); });
     editEl.addEventListener("keydown", e => {
       if (e.key === "Escape") { e.stopPropagation(); goLive(); }
       // Enter commits: the loose thing you typed is rewritten in the format you
       // have chosen, so "6pm" settles as 18:00 or 6 pm rather than sitting there
       // as your keystrokes.
-      else if (e.key === "Enter") { e.preventDefault(); normalizeEditor(); editEl.select(); }
+      // Enter commits and closes, leaving the board on that instant.
+      else if (e.key === "Enter") { e.preventDefault(); normalizeEditor(); closeEditor(true); }
     });
 
     // ---- click an hour mark to go there, the centre to come back to now
@@ -2144,16 +2234,12 @@ function paintSlow(c, p, nowMs, viewerDay) {
   c.time.innerHTML = t.t + (t.suffix ? `<small>${t.suffix}</small>` : "");
   c.meta.textContent = c.city.place + " · " + offsetLabel(p.offset);
 
-  // The city's own weekday, rather than today / tomorrow / yesterday. A day name
-  // is an absolute fact and needs no reference point, which is what you want on
-  // a board where cards differ in date from each other and not only from yours.
-  // Compact tiles keep their rule of saying only what is surprising: the same
-  // date as yours stays blank, and a different one gets the day in three letters,
-  // which is what the old ±1d was trying to say.
+  // Compact tiles ignore the date format and keep their own rule of saying only
+  // what is surprising: the same date as yours stays blank, a different one gets
+  // the day in three letters. Nothing longer fits beside a 15px time in 78px.
   const cardDay = Date.UTC(p.y, p.mo - 1, p.d);
-  const name = DAY_NAMES[new Date(cardDay).getUTCDay()];
-  c.rel.textContent = !compact() ? name
-    : cardDay === viewerDay ? "" : name.slice(0, 3);
+  c.rel.textContent = !compact() ? dateLabel(p, cardDay)
+    : cardDay === viewerDay ? "" : DAY_NAMES[new Date(cardDay).getUTCDay()].slice(0, 3);
 
   // ---- whichever working-day boundary comes round next, and nothing else
   const m = p.minutes;
@@ -2558,21 +2644,27 @@ function dialHover(i, el, e) {
 }
 
 /* -----------------------------------------------------------------------
-   Winding a dial: the hidden gestures
+   Winding a dial
 
-   Both are behind a modifier, because a plain press on a dial now means jump.
+   Hours is the plain one, and it starts wherever a click would have landed: drag
+   round the ring of marks and the hour hand follows the pointer, a full turn to
+   twelve hours, accumulating rather than wrapping, so it carries past the end of
+   the dial's twelve and keeps going. Point at a time with a click, then drag from
+   there to run it forward or back.
 
-   Spin (hold Shift) is a sprung joystick. Pull left or right of where you
-   pressed and time runs that way, faster the further you pull, until you let
-   go. Pulling is cheap, so covering half a day costs one gesture rather than
-   the dozen turns winding needed.
+   It is deliberately confined to the ring: the centre still means back to now,
+   the space outside the rim is left to the card so a board can still be
+   reordered by dragging from a dial's outskirts, and touch is left alone
+   entirely, where a press is a tap and a drag is a scroll.
 
-   Wind (hold Alt) is the literal one: six degrees is one minute, so the minute
-   hand tracks the pointer and a full turn is an hour. Precise, but tedious over
-   any distance.
+   Two older gestures stay behind modifiers. Spin (hold Shift) is a sprung
+   joystick: pull left or right of where you pressed and time runs that way,
+   faster the further you pull, until you let go. Wind (hold Alt) is the fine
+   one: six degrees is one minute, so the minute hand tracks the pointer and a
+   full turn is an hour.
 
-   Either way, releasing leaves the board paused, and a modified press with no
-   drag returns to now, same as clicking the centre.
+   Any of them leaves the board paused on release, and a press with no drag
+   falls through to the click.
    ----------------------------------------------------------------------- */
 let scrub = null;
 const spinning = () => !!(scrub && scrub.armed && scrub.mode === "spin" && scrub.rate);
@@ -2595,11 +2687,25 @@ const dialAngle = (el, x, y) => {
                     (r.top + r.height / 2) - y) * 180 / Math.PI;
 };
 
+// Minutes of clock time per degree of pointer travel. The hour hand's own rate
+// for "hours", the minute hand's for "wind".
+const TURN_RATE = { hours: 2, wind: 1 / 6 };
+
 function scrubStart(i, el, e) {
   if (e.button !== undefined && e.button !== 0) return;
-  const mode = e.shiftKey ? "spin" : e.altKey ? "wind" : null;
-  if (!mode) return;                  // a plain press belongs to click-to-jump
-  e.preventDefault();
+  let mode = e.shiftKey ? "spin" : e.altKey ? "wind" : null;
+  if (!mode) {
+    // Mouse and pen only, and only on the ring of marks: see above.
+    if (e.pointerType === "touch") return;
+    const at = dialPoint(el, e).r;
+    if (at <= HUB_R || at > DIAL_HIT) return;
+    mode = "hours";
+  }
+  // Only the modifier gestures cancel the press. A plain one must not: cancelling
+  // pointerdown is specified to suppress the compatibility mouse events, and
+  // click-to-jump depends on the click that follows. The native card drag is
+  // stopped by clearing draggable below, and stray text selection by user-select.
+  if (mode !== "hours") e.preventDefault();
   closeEditor(true);                  // keep any typed instant as the base
   scrub = {
     el, mode,
@@ -2623,13 +2729,14 @@ function scrubMove(e) {
     scrub.tick = Date.now();
     freezeAt(scrub.base);
   }
-  if (scrub.mode === "wind") {
+  if (scrub.mode !== "spin") {
     const a = dialAngle(scrub.el, e.clientX, e.clientY);
     let d = a - scrub.last;
     if (d > 180) d -= 360; else if (d < -180) d += 360;
     scrub.turned += d;
     scrub.last = a;
-    freezeAt(scrub.base + Math.round(scrub.turned / 6) * 60000);
+    // Accumulated, not wrapped, which is what carries it past twelve hours.
+    freezeAt(scrub.base + Math.round(scrub.turned * TURN_RATE[scrub.mode]) * 60000);
   } else {
     scrub.rate = spinRate(e.clientX - scrub.ox);   // update() does the moving
   }
@@ -2788,7 +2895,28 @@ const dock = document.getElementById("dock");
 const menuBtn = document.getElementById("menu");
 const settings = document.getElementById("settings");
 
+/* A preset is a shortcut, not a mode: it sets several of the switches below and
+   is then forgotten. The row shows one as chosen only while every value it names
+   still matches, so it stops claiming credit the moment anything is changed by
+   hand. Named after what the face carries rather than after a style. */
+const PRESETS = {
+  classic:  { nums: "quarters", ticks: true,  weather: "off",  ring: "both" },
+  minimal:  { nums: "none",     ticks: false, weather: "off",  ring: "icons" },
+  weather:  { nums: "quarters", ticks: true,  weather: "dial", ring: "both" }
+};
+const presetNow = () => Object.keys(PRESETS).find(name =>
+  Object.entries(PRESETS[name]).every(([k, v]) => state[k] === v)) || "";
+
 const HINTS = {
+  preset: {
+    classic: "A watch face: marks, quarter numerals, and no forecast around the dial.",
+    minimal: "Hands on a bare dial. No marks, no numerals, no forecast.",
+    weather: "The dial ringed with the coming hours, temperatures and conditions both."
+  },
+  ticks: {
+    "1": "Hour and minute marks, with the numerals inside them.",
+    "0": "No marks. The numerals move out to where they were."
+  },
   shade: {
     card: "The card is the sky and darkens with the city, leaving the dial as a pale moon on it.",
     dial: "Only the watch face darkens. The cards keep the page theme, which is steadier on a big board."
@@ -2821,6 +2949,10 @@ const HINTS = {
 const settingValue = group =>
   group === "hour12" ? (state.hour12 ? "1" : "0") :
   group === "solar" ? (state.solar ? "1" : "0") :
+  group === "ticks" ? (state.ticks ? "1" : "0") :
+  group === "preset" ? presetNow() :
+  group === "date" ? state.date :
+  group === "nums" ? state.nums :
   group === "shade" ? state.shade :
   group === "weather" ? state.weather :
   group === "ring" ? state.ring :
@@ -2859,6 +2991,11 @@ function syncTools() {
   }
   fillHourSelects();
   const dark = [stamp(CONFIG.nightFrom, state.hour12), stamp(CONFIG.nightTo, state.hour12)];
+  const preset = presetNow();
+  document.getElementById("hint-preset").textContent = preset
+    ? HINTS.preset[preset]
+    : "Each preset sets the numerals, the marks and the forecast in one go.";
+  document.getElementById("hint-ticks").textContent = HINTS.ticks[settingValue("ticks")];
   document.getElementById("hint-shade").textContent = HINTS.shade[state.shade];
   document.getElementById("hint-hours").textContent = HINTS.hours;
   document.getElementById("hint-solar").textContent = HINTS.solar[settingValue("solar")](dark);
@@ -2887,8 +3024,21 @@ function applySetting(group, val) {
     // rather than at the next perceptible change in darkness.
     for (const c of cards) c._k = undefined;
     repaintAll();
-  } else if (group === "weather" || group === "ring" || group === "density") {
-    state[group] = val;
+  } else if (group === "preset") {
+    // Straight through the individual setters, so each one persists and does
+    // whatever repainting it needs; the rebuild at the end catches the rest.
+    for (const [k, v] of Object.entries(PRESETS[val])) {
+      applySetting(k, typeof v === "boolean" ? (v ? "1" : "0") : v);
+    }
+    return;
+  } else if (group === "date") {
+    state.date = val;
+    store.set(LS.date, val);
+    repaintAll();
+  } else if (group === "weather" || group === "ring" || group === "density" ||
+             group === "nums" || group === "ticks") {
+    if (group === "ticks") state.ticks = val === "1";
+    else state[group] = val;
     store.set(LS[group], val);
     syncTools();
     buildCards();          // viewBox, layout and which handlers apply all change
@@ -2970,6 +3120,9 @@ document.addEventListener("keydown", e => {
 document.addEventListener("pointerdown", e => {
   if (state.frozen == null || scrub) return;
   if (e.target.closest(".clock, .digital, .dock, #settings")) return;
+  // A click away from an open field commits it rather than discarding it: the
+  // first click puts the typed time down, a second one returns to now.
+  if (editing !== null) { closeEditor(true); return; }
   goLive();
 });
 
@@ -2981,6 +3134,7 @@ function toast(msg) {
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => el.classList.remove("show"), 1800);
 }
+document.getElementById("addFab").addEventListener("click", () => openPicker(-1));
 document.getElementById("share").addEventListener("click", async () => {
   persist();
   try {
@@ -2998,6 +3152,13 @@ syncTools();
 persist();
 buildCards();
 update();
+
+// Window focus, for the add tile: an unfocused board is being glanced at, so it
+// shows nothing that asks to be clicked.
+const setBlur = on => document.documentElement.classList.toggle("blurred", on);
+addEventListener("blur", () => setBlur(true));
+addEventListener("focus", () => setBlur(false));
+if (document.hasFocus && !document.hasFocus()) setBlur(true);
 
 // On auto, crossing the breakpoint changes the layout, the viewBox and which
 // handlers are attached, so the cards have to be rebuilt — but only when the

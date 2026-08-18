@@ -14,8 +14,8 @@ the domes show no icons; clocks, sunrise and sunset are computed locally.
 
 ![The dashboard in daylight](docs/board-light.png)
 
-The board is the whole page. Controls are two floating buttons in the bottom-right:
-copy-link and settings.
+The board is the whole page. Controls are three floating buttons in the bottom-right:
+add a city, copy-link, and settings.
 
 Each card carries a dial, a twelve-hour forecast ring, the local time, a sky dome
 showing where the sun is in that city's day, and a countdown to the next end of the
@@ -106,9 +106,15 @@ Each token is matched against city slugs (`new-york`), plain names (`New York`),
 IANA zones (`Europe/London`), and aliases (`nyc`, `bombay`, `bangalore`, `hk`).
 Unrecognised tokens are dropped.
 
-**By clicking**: click any city name to replace that clock, or the `+ Add city`
-tile to append one. Search by city, region, country or time zone; arrow keys and
-Enter work.
+**By clicking**: click any city name to replace that clock, or the plus in the dock to
+append one. Search by city, region, country or time zone; arrow keys and Enter work.
+
+There is a second way to append, in the gap after the last card where a new one would
+appear, but it keeps out of the composition until you go looking for it: an `+ Add city`
+tile that fades in when the pointer enters that empty cell, and stays hidden while the
+window is unfocused, since a board being glanced at should not be offering anything to
+click. It holds its grid cell either way, so nothing shifts when it appears. A permanent
+dashed rectangle on every board was the loudest thing on an otherwise quiet page.
 
 **Reordering**: drag a card and a caret appears in the gutter showing exactly where
 it will land: the near half of a card means before it, the far half means after it.
@@ -139,6 +145,14 @@ back to now. Nothing to hold down, and it works the same with a mouse or a thumb
 Hovering shows what a click will do: a ghost of the hour hand where it would land,
 and a tag with the time it would set.
 
+**Or drag round the ring of marks**, and the hour hand follows the pointer: a full turn
+to twelve hours, accumulating rather than wrapping, so it carries straight past the end
+of the dial's twelve and keeps going. Point at a time with a click, then drag from there
+to run it forward or back. The gesture is confined to the ring on purpose. The centre
+still means back to now, the space outside the rim is left to the card so a board can
+still be reordered by dragging from a dial's outskirts, and touch is left alone
+entirely, where a press is a tap and a drag is a scroll.
+
 Clicks snap to the half hour. The hour marks are the obvious targets and each sits
 dead centre of its own segment, while the midpoints between them cover the `:30` that
 most meetings actually start on. A 12-hour dial names two times, and the nearer one is
@@ -151,27 +165,30 @@ when someone quotes a time in their own zone. The field is forgiving about forma
 what you have typed is not yet a valid time the underline turns red and the board holds
 the last good instant, so it does not lurch around mid-keystroke.
 
-`Enter` commits, and rewrites what you typed in the format you have chosen: `6pm`
-settles as `18:00`, or as `6 pm` on 12-hour. Switching that setting reformats a field
-left open, too. The value is read back from the instant the board is holding rather
-than from your keystrokes, so it is the committed time being shown, not a tidied
-version of the text.
+`Enter` commits and closes the field, rewriting what you typed in the format you have
+chosen: `6pm` settles as `18:00`, or as `6 pm` on 12-hour. Switching that setting
+reformats a field left open, too. The value is read back from the instant the board is
+holding rather than from your keystrokes, so it is the committed time being shown, not a
+tidied version of the text.
+
+Clicking away commits it too. Losing focus used to throw the time away and snap the
+board back to now, which made the field feel like a trap: the first click elsewhere puts
+the typed time down, and only a second one returns to now.
 
 **Or step by the hour.** `←` and `→` move the board back and forward an hour at a
 time. They stay out of the way where they already mean something: inside the time
 field they move the caret, inside the settings menu they change the setting.
 
-Any of these can be mixed. `Esc`, a click away, or a click on a dial's centre returns
-to now and the second hand starts sweeping again.
+Any of these can be mixed. `Esc`, a click on a dial's centre, or a click away from an
+already-committed board returns to now and the second hand starts sweeping again.
 
-Two hidden gestures remain for winding time continuously, both behind a modifier since
-a plain press on a dial now means jump. Hold **Shift** and drag a dial like a sprung
+Two older gestures stay behind modifiers. Hold **Shift** and drag a dial like a sprung
 joystick: pull left or right of where you started and time runs that way for as long as
 you hold, faster the further you pull, squared, so it is a few minutes a second near the
 dead zone and two hours a second at full stretch. The pill at the foot of the screen
 reports the direction and speed while it runs. Hold **Alt** instead and the drag winds
-time literally: six degrees is one minute, so the minute hand tracks the pointer and a
-full turn is an hour. Precise, but tedious over any real distance.
+by the minute hand rather than the hour hand: six degrees is one minute, and a full turn
+is an hour. Fine, but tedious over any real distance.
 
 Because everything on a card is derived from a single instant, pausing on one makes
 the *whole* card describe that moment, not just the digits: the sky domes move the sun
@@ -244,11 +261,13 @@ Two details worth knowing:
 - **Both bodies move in real time**, repositioned every frame.
 - **The second hand floats**, a true continuous sweep driven off the epoch so every
   card is in lockstep. The minute and hour hands drift continuously too.
-- **Beside the time is that city's weekday**, `Friday`, rather than today or tomorrow.
-  A day name is absolute and needs no reference point, which is what you want on a
-  board where the cards differ in date from each other and not only from yours.
-  Compact tiles keep their rule of saying only what is surprising: your own date is
-  left blank, another one gets three letters.
+- **Beside the time is that city's date**, `Tue 18 Aug`, rather than today or tomorrow.
+  A date is absolute and needs no reference point, which is what you want on a board
+  where the cards differ from each other and not only from you. **Date** offers three
+  forms: `Mon` alone, `Mon 7 Jul`, or ISO `2026-07-07` for when it has to be
+  unambiguous. Compact tiles ignore the setting and keep their own rule of saying only
+  what is surprising, since nothing longer fits beside a 15px time in 78px: your own
+  date is left blank, another one gets three letters.
 - **Nightfall fades a surface between light and dark** rather than flipping it, from a
   single 0-1 darkness value recomputed every second. **Night darkens** chooses which
   surface. *The card* (the default) treats the card as the sky, running white to
@@ -323,6 +342,27 @@ astronomy, so the two can legitimately disagree: Tokyo at 05:21 shows a dark car
 the sun already up on the dome, which is exactly the situation you want to see before
 scheduling a call there. *Real sun* removes that disagreement at the cost of every city
 behaving differently.
+
+## The face
+
+**Numerals** is `None`, `12 3 6 9`, or `All 12`. **Dial marks** turns the hour and minute
+marks on or off, and with them gone the numerals move out to the band the marks occupied,
+because that is where the eye reads a dial and leaving it empty makes the face look
+unfinished rather than clean. All twelve numerals are set a size smaller, since twelve of
+them at full size crowd the ring.
+
+**Preset** is a shortcut across those and the forecast, named after what the face
+carries rather than after a style:
+
+| | Numerals | Marks | Forecast |
+|---|---|---|---|
+| **Classic** | `12 3 6 9` | on | none |
+| **Minimal** | none | off | none |
+| **Weather** | `12 3 6 9` | on | dial ring, temperatures and conditions |
+
+A preset is a shortcut, not a mode: it sets those switches and is then forgotten. The row
+shows one as chosen only while every value it names still matches, so it stops claiming
+credit the moment anything is changed by hand.
 
 ## Weather
 
