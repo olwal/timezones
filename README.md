@@ -206,6 +206,15 @@ Two details worth knowing:
   daylight-saving changes. A local time that does not exist, 02:30 on a
   spring-forward morning, resolves to a real adjacent instant rather than `NaN`.
 
+## Reaching a setting from the card
+
+The read-outs that are governed by a setting open the menu at that setting: the date
+opens `Date`, the countdown opens `Hours`, the sky band opens `Weather forecast`. The
+section flashes once so it is obvious where you landed. With thirteen sections in the
+menu, the shortest path to the switch behind a thing is the thing itself. They are quiet
+until hovered, since a card full of underlined links would undo the point of the layout,
+and they do not count as clicking away, so a paused board stays paused.
+
 ## Reading a clock
 
 - **The sky dome** at the foot of each card is a whole circle seen edge on: a horizon
@@ -393,6 +402,21 @@ default costs the dial some size, and why the ring is drawn lighter than the dia
 own marks: it is context around the clock, not part of it.
 
 ![Temperatures and conditions on two rings](docs/ring-both.png)
+
+**Ring metric** chooses which number the ring and the dome readout print: `Temp`,
+`Feels` (apparent temperature, what it feels like with wind and humidity), `Rain`
+(chance of precipitation), or `Wind`. One request per city already carried three days
+of hours, so the extra fields are close to free: the same call, a couple of kilobytes
+more, and no second endpoint. What is not on the ring is in the tooltips, which cost
+nothing at all:
+
+```
+22:00 · Overcast · 22° (feels 21°) · 0% rain · wind 13km/h · 57% humidity
+```
+
+Wind is the one reading whose unit is dropped from the ring. `22km/h` at the three
+o'clock position is wide enough to overhang the dial's box and get clipped, and eleven
+copies of a unit is noise anyway; the dome readout has room and keeps it.
 
 **Temperature** switches between `°C` and `°F`. Open-Meteo is asked for Celsius and
 the conversion happens locally, so switching units costs no request and never
