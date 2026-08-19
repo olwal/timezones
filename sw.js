@@ -4,7 +4,8 @@
  * Network-first for same-origin requests, falling back to the cache. That way a
  * deploy is picked up on the next load instead of the installed copy going
  * stale, which is the usual failure mode of cache-first app shells — and this
- * is one HTML file, so there is no bundle worth optimising for.
+ * is one HTML file and three small modules, so there is no bundle worth
+ * optimising for.
  *
  * Cross-origin requests are left alone: the forecast has its own localStorage
  * cache inside the app, and if Google Fonts is unreachable the page falls back
@@ -14,7 +15,10 @@
 const CACHE = "timezones-v1";
 const SHELL = [
   "./", "./index.html", "./manifest.webmanifest", "./favicon.svg",
-  "./icons/icon-192.png", "./icons/icon-512.png", "./icons/apple-touch-icon.png"
+  "./icons/icon-192.png", "./icons/icon-512.png", "./icons/apple-touch-icon.png",
+  // index.html is a module now: without these three it loads to an empty board
+  // for anyone who goes offline before the browser has fetched them.
+  "./js/cities.js", "./js/tz.js", "./js/sky.js"
 ];
 
 self.addEventListener("install", e => {

@@ -5,8 +5,11 @@
 A dashboard of minimal analog clocks for cities around the world: high-contrast
 dials, fine minute ticks, flat hands and a yellow sweep second hand.
 
-Everything lives in one `index.html`: no build step, no dependencies, no framework.
-Open it from disk or host it as a static file.
+The board lives in `index.html`, with the city table, the time-zone helpers and the
+astronomy split into three ES modules under `js/`: no build step, no dependencies,
+no framework. Because they are modules, a browser will not load them over `file://`,
+so this is served rather than opened from disk. Any static file server does, and
+`python -m http.server` is enough to run it locally.
 
 Two optional network requests: Inter from Google Fonts, and the forecast from
 Open-Meteo if weather is on. Offline, the font falls back to the system UI sans and
@@ -87,8 +90,8 @@ opens a chromeless window, which is handy for a wall display.
 same-origin requests, falling back to the cache, so a deploy is picked up on the next
 load rather than the installed copy going stale. Offline you keep the clocks, sunrise,
 sunset and time conversion, since all of those are computed locally; only the forecast
-is missing. The worker is only registered over http(s), and opening `index.html` from disk
-stays a supported way to use this.
+is missing. The worker is only registered over http(s), which is now the only way the
+page runs at all: the modules make `file://` a non-starter.
 
 The tab title carries the first few clocks, so a pinned tab or a taskbar hover reads
 as a status line. It always shows the real time, never a paused or wound one, since as
