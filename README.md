@@ -408,10 +408,10 @@ own marks: it is context around the clock, not part of it.
 
 **Ring metric** chooses which number the ring and the dome readout print: `Temp`,
 `Feels` (apparent temperature, what it feels like with wind and humidity), `Rain`
-(chance of precipitation), or `Wind`. One request per city already carried three days
-of hours, so the extra fields are close to free: the same call, a couple of kilobytes
-more, and no second endpoint. What is not on the ring is in the tooltips, which cost
-nothing at all:
+(chance of precipitation), `Wind`, or `Air` when air quality is on. One request per
+city already carried three days of hours, so those four are close to free: the same
+call, a couple of kilobytes more, and no second endpoint. What is not on the ring is
+in the tooltips, which cost nothing at all:
 
 ```
 22:00 · Overcast · 22° (feels 21°) · 0% rain · wind 13km/h · 57% humidity
@@ -420,6 +420,27 @@ nothing at all:
 Wind is the one reading whose unit is dropped from the ring. `22km/h` at the three
 o'clock position is wide enough to overhang the dial's box and get clipped, and eleven
 copies of a unit is noise anyway; the dome readout has room and keeps it.
+
+**Air quality** is off by default, and is the one reading that costs a request of its
+own. Open-Meteo serves it free and keyless like the forecast, but from a different
+host, so it cannot ride along on the call already being made. A board that never asks
+the question should not pay a second round trip per city for it, which is why this is
+a switch rather than simply another metric.
+
+Turned on, it adds `Air` to the ring metric and puts the index and pm2.5 into every
+forecast tooltip. The number is the European AQI, where lower is cleaner. It is left
+uncoloured on purpose: the board has one accent, and spending it on six air-quality
+bands would shout over the clocks, so the band is named in the tooltip instead.
+
+![Air quality on the ring and the dome](docs/air-quality.png)
+
+```
+01:00 · Partly cloudy · 18° (feels 17°) · 0% rain · wind 11km/h · 63% humidity ·
+air 19 (Good) · pm2.5 5
+```
+
+It keeps its own cache, separate from the forecast's, so turning it on does not
+invalidate every stored forecast for a field most boards never show.
 
 **Temperature** switches between `°C` and `°F`. Open-Meteo is asked for Celsius and
 the conversion happens locally, so switching units costs no request and never

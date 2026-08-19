@@ -584,6 +584,14 @@ html.blurred .add { opacity: 0; }
     </div>
     <p class="hint" id="hint-weather"></p>
   </section>
+  <section id="sec-air">
+    <h2>Air quality</h2>
+    <div class="seg" role="radiogroup" aria-label="Air quality" data-group="air">
+      <button type="button" role="radio" data-val="0">Off</button>
+      <button type="button" role="radio" data-val="1">On</button>
+    </div>
+    <p class="hint" id="hint-air"></p>
+  </section>
   <section id="sec-metric">
     <h2>Ring metric</h2>
     <div class="seg" role="radiogroup" aria-label="What the numbers show" data-group="metric">
@@ -591,6 +599,7 @@ html.blurred .add { opacity: 0; }
       <button type="button" role="radio" data-val="feels">Feels</button>
       <button type="button" role="radio" data-val="rain">Rain</button>
       <button type="button" role="radio" data-val="wind">Wind</button>
+      <button type="button" role="radio" data-val="air" id="metric-air" hidden>Air</button>
     </div>
     <p class="hint" id="hint-metric"></p>
   </section>
@@ -674,6 +683,7 @@ const LS = {
   ring: "worldclock.ring",
   units: "worldclock.units",
   metric: "worldclock.metric",
+  air: "worldclock.air",
   density: "worldclock.density"
 };
 const store = {
@@ -707,7 +717,10 @@ let state = {
   weather: store.get(LS.weather, "dial"),  // dial | dome | off
   ring: store.get(LS.ring, "both"),        // icons | temps | both
   units: store.get(LS.units, "c"),         // c | f
-  metric: store.get(LS.metric, "temp"),    // temp | feels | rain | wind
+  metric: store.get(LS.metric, "temp"),    // temp | feels | rain | wind | air
+  // Off by default on purpose: it is a second request per city, on a second
+  // endpoint, and most boards never ask the question.
+  air: store.get(LS.air, "0") === "1",
   density: store.get(LS.density, "auto")   // auto | full | compact
 };
 if (!["auto", "full", "compact"].includes(state.density)) state.density = "auto";
@@ -722,7 +735,10 @@ if (!["none", "quarters", "all"].includes(state.nums)) state.nums = "quarters";
 if (!["dial", "dome", "off"].includes(state.weather)) state.weather = "dial";
 if (!["icons", "temps", "both"].includes(state.ring)) state.ring = "icons";
 if (!["c", "f"].includes(state.units)) state.units = "c";
-if (!["temp", "feels", "rain", "wind"].includes(state.metric)) state.metric = "temp";
+if (!["temp", "feels", "rain", "wind", "air"].includes(state.metric)) state.metric = "temp";
+// Air is the one metric that needs its own fetch, so it cannot outlive the
+// setting that pays for it.
+if (state.metric === "air" && !state.air) state.metric = "temp";
 
 // Open-Meteo is asked for Celsius and the conversion happens here, so switching
 // units costs nothing and never invalidates the cache.
@@ -882,6 +898,85 @@ function wxEnsure(city, onLoad) {
     .catch(() => { /* offline or blocked: the dome simply shows no icons */ })
     .finally(() => wxPending.delete(city.id));
   return have;
+}
+
+/* Air quality, on a second endpoint and behind its own setting.
+
+   Open-Meteo serves this free and keyless like the forecast, but from
+   air-quality-api rather than api, so it cannot ride along on the request that
+   is already being made. That is the whole reason it is opt-in: a board that
+   never asks the question should not pay a second round trip per city for it.
+
+   Its own cache and its own version, because widening the forecast row would
+   invalidate every stored forecast for a field most people will never turn on.
+   A row is [epochMs, europeanAqi, pm2.5, pm10, ozone, nitrogenDioxide]. */
+const AQ_CACHE_V = 1;
+const AQCOL = { TS: 0, AQI: 1, PM25: 2, PM10: 3, O3: 4, NO2: 5 };
+const AQ_FIELDS = ["european_aqi", "pm2_5", "pm10", "ozone", "nitrogen_dioxide"];
+const aqData = new Map();              // cityId -> {v, at, rows}
+const aqByHour = new Map();            // cityId -> Map(hour epochMs -> row)
+const aqPending = new Set();
+
+// The European scale's own bands. Named rather than coloured: the board has one
+// accent and spending it on six air-quality bands would shout over the clocks.
+const AQ_BANDS = [[20, "Good"], [40, "Fair"], [60, "Moderate"],
+                  [80, "Poor"], [100, "Very poor"], [Infinity, "Extremely poor"]];
+const aqBand = v => (AQ_BANDS.find(b => v <= b[0]) || AQ_BANDS[AQ_BANDS.length - 1])[1];
+
+function aqIndex(city, v) {
+  const m = new Map();
+  for (const row of v.rows) m.set(row[AQCOL.TS], row);
+  aqByHour.set(city.id, m);
+  return v;
+}
+
+function aqRead(city) {
+  if (aqData.has(city.id)) return aqData.get(city.id);
+  try {
+    const raw = localStorage.getItem("worldclock.aq." + city.id);
+    if (raw) {
+      const v = JSON.parse(raw);
+      if (v.v !== AQ_CACHE_V) return null;
+      aqData.set(city.id, v);
+      return aqIndex(city, v);
+    }
+  } catch {}
+  return null;
+}
+
+function aqEnsure(city, onLoad) {
+  if (!state.air) return null;
+  const have = aqRead(city);
+  if (have && Date.now() - have.at < WX_TTL) return have;
+  if (aqPending.has(city.id)) return have;
+  aqPending.add(city.id);
+
+  const url = "https://air-quality-api.open-meteo.com/v1/air-quality?latitude=" + city.lat +
+    "&longitude=" + city.lon + "&hourly=" + AQ_FIELDS.join(",") +
+    "&forecast_days=3&timeformat=unixtime&timezone=UTC";
+  fetch(url)
+    .then(r => r.ok ? r.json() : Promise.reject(new Error("HTTP " + r.status)))
+    .then(j => {
+      const h = j.hourly;
+      const rows = h.time.map((sec, i) =>
+        [sec * 1000, ...AQ_FIELDS.map(f => h[f] ? h[f][i] : null)]);
+      const v = { v: AQ_CACHE_V, at: Date.now(), rows };
+      aqData.set(city.id, v);
+      aqIndex(city, v);
+      try { localStorage.setItem("worldclock.aq." + city.id, JSON.stringify(v)); } catch {}
+      onLoad();
+    })
+    // Same posture as the forecast: no air quality simply prints nothing.
+    .catch(() => {})
+    .finally(() => aqPending.delete(city.id));
+  return have;
+}
+
+// The air-quality hours line up with the forecast hours, both being whole UTC
+// hours from the same service, so a row is found by its timestamp.
+function aqRow(city, ts) {
+  const m = aqByHour.get(city.id);
+  return m ? m.get(ts) || null : null;
 }
 
 /* =======================================================================
@@ -1623,17 +1718,22 @@ const METRICS = {
   feels: { col: WXCOL.FEELS, ring: fmtTemp,                  full: fmtTemp },
   rain:  { col: WXCOL.POP,   ring: v => Math.round(v) + "%", full: v => Math.round(v) + "%" },
   wind:  { col: WXCOL.WIND,  ring: v => String(windValue(v)),
-           full: v => windValue(v) + windUnit() }
+           full: v => windValue(v) + windUnit() },
+  // The only metric that is not in the forecast row: it comes from the air
+  // quality request and is matched to the hour the row is for.
+  air:   { aq: AQCOL.AQI,    ring: v => String(Math.round(v)),
+           full: v => Math.round(v) + " AQI" }
 };
-const metricOf = (row, form) => {
+const metricOf = (row, form, c) => {
   const m = METRICS[state.metric] || METRICS.temp;
-  const v = row[m.col];
+  const aq = m.aq != null ? (c && aqRow(c.city, row[WXCOL.TS])) : null;
+  const v = m.aq != null ? (aq && aq[m.aq]) : row[m.col];
   return v == null ? "" : m[form](v);
 };
 
 // Everything known about one hour, for a tooltip. Nulls are left out rather than
 // printed as blanks, since a forecast does not always carry every field.
-function wxDetail(row, hour12) {
+function wxDetail(row, hour12, c) {
   const key = wxIcon(row[WXCOL.CODE], true);
   const bits = [stamp(hour12.minutes, hour12.h12) + " · " + WX_TEXT[key]];
   if (row[WXCOL.TEMP] != null) {
@@ -1646,6 +1746,14 @@ function wxDetail(row, hour12) {
   if (row[WXCOL.POP] != null) bits.push(Math.round(row[WXCOL.POP]) + "% rain");
   if (row[WXCOL.WIND] != null) bits.push("wind " + METRICS.wind.full(row[WXCOL.WIND]));
   if (row[WXCOL.RH] != null) bits.push(row[WXCOL.RH] + "% humidity");
+  // Air quality rides along here whenever it has been fetched, the same way the
+  // readings the ring is not showing do. Named as well as numbered: 42 means
+  // nothing on its own, and the European scale is the one being reported.
+  const aq = c && aqRow(c.city, row[WXCOL.TS]);
+  if (aq && aq[AQCOL.AQI] != null) {
+    bits.push("air " + Math.round(aq[AQCOL.AQI]) + " (" + aqBand(aq[AQCOL.AQI]) + ")");
+    if (aq[AQCOL.PM25] != null) bits.push("pm2.5 " + Math.round(aq[AQCOL.PM25]));
+  }
   return bits.join(" · ");
 }
 
@@ -1659,7 +1767,7 @@ function showNow(c, row) {
   const key = row == null ? null : wxIcon(row[WXCOL.CODE], true);
   // Labelled with the hour the row is for, which is the hour containing now.
   const detail = row == null ? "" : wxDetail(row,
-    { minutes: partsFor(c.city.tz, new Date(row[WXCOL.TS])).minutes, h12: state.hour12 });
+    { minutes: partsFor(c.city.tz, new Date(row[WXCOL.TS])).minutes, h12: state.hour12 }, c);
   const glyph = key === null || key === "clear" ? "" :
     wxGlyph(key, 0, 0, 13.5, "currentColor", detail);
   if (c._nowKey !== key + "|" + detail) {
@@ -1668,7 +1776,7 @@ function showNow(c, row) {
     // The rayed sun steps aside only when something else is there to draw.
     c.sunClear.style.display = glyph ? "none" : "";
   }
-  const label = row == null ? "" : metricOf(row, "full");
+  const label = row == null ? "" : metricOf(row, "full", c);
   if (c.sunTemp.textContent !== label) c.sunTemp.textContent = label;
 }
 
@@ -1688,6 +1796,7 @@ function paintWeather(c, nowMs, sunUp) {
     return;
   }
   const data = wxEnsure(c.city, () => { c._wxKey = null; });
+  aqEnsure(c.city, () => { c._wxKey = null; });
   if (!data) return;
   // Mid-spin the hour changes several times a second; re-deriving the forecast
   // that often is wasted work and reads as flicker. scrubEnd refreshes it.
@@ -1714,7 +1823,7 @@ function paintWeather(c, nowMs, sunUp) {
       const s2 = sunFor(c.city, p2);
       const up = s2.polar ? s2.polar === "day" : (ts >= s2.sunrise && ts < s2.sunset);
       const key2 = wxIcon(row[WXCOL.CODE], up);
-      return `<svg viewBox="0 0 16 16"><title>${wxDetail(row, { minutes: p2.minutes, h12: state.hour12 })}</title>` +
+      return `<svg viewBox="0 0 16 16"><title>${wxDetail(row, { minutes: p2.minutes, h12: state.hour12 }, c)}</title>` +
         `<g fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"
            stroke-linejoin="round">${WX[key2]}</g></svg>`;
     }).join("");
@@ -1755,7 +1864,7 @@ function paintWeather(c, nowMs, sunUp) {
     const key = wxIcon(row[WXCOL.CODE], sunUp);
     const p2 = partsFor(c.city.tz, new Date(row[WXCOL.TS]));
     return wxGlyph(key, x, y, 12.5, "currentColor",
-      wxDetail(row, { minutes: p2.minutes, h12: state.hour12 }));
+      wxDetail(row, { minutes: p2.minutes, h12: state.hour12 }, c));
   }).join("");
   c.wx.style.opacity = ".5";
 }
@@ -1791,7 +1900,7 @@ function paintDialRing(c, nowMs, data) {
     // Lighter than the dial's own marks: the ring is context around the clock,
     // not part of it, and in "both" there are two of these rings to keep quiet.
     const op = 0.6 - 0.32 * (i / Math.max(1, rows.length - 1));
-    const label = wxDetail(row, { minutes: p2.minutes, h12: state.hour12 });
+    const label = wxDetail(row, { minutes: p2.minutes, h12: state.hour12 }, c);
     if (state.ring !== "temps") {
       const [x, y] = pol(iconR, angle);
       out.push(wxGlyph(key, x, y, both ? 14 : 15, "currentColor", label, op));
@@ -1803,7 +1912,7 @@ function paintDialRing(c, nowMs, data) {
       out.push(`<g class="wx-temp" opacity="${op.toFixed(2)}"><title>${label}</title>
         <text x="${x.toFixed(1)}" y="${y.toFixed(1)}" text-anchor="middle"
           dominant-baseline="central" font-size="11.5" font-weight="500"
-          fill="currentColor">${metricOf(row, "ring")}</text></g>`);
+          fill="currentColor">${metricOf(row, "ring", c)}</text></g>`);
     }
   });
   c.wxRing.innerHTML = out.join("");
@@ -2324,7 +2433,15 @@ const HINTS = {
     feels: "Apparent temperature: what it feels like with wind and humidity.",
     rain:  "Chance of precipitation, as a percentage.",
     wind:  "Wind speed. The ring drops the unit to stay inside the dial's box; " +
-           "the dome readout and every tooltip carry it."
+           "the dome readout and every tooltip carry it.",
+    air:   "European air quality index, at each hour position. Lower is cleaner, " +
+           "and the tooltips name the band."
+  },
+  air: {
+    "0": "Off. Nothing is asked of the air quality service.",
+    "1": "On. A second request per city, to a second Open-Meteo endpoint, which is " +
+         "why this is not on for everybody. Adds Air to the ring metric, and puts the " +
+         "index and pm2.5 in every forecast tooltip."
   },
   ring: {
     icons: "Conditions only. The gap in the ring is the current hour; it reads clockwise from there.",
@@ -2350,6 +2467,7 @@ const settingValue = group =>
   group === "ring" ? state.ring :
   group === "units" ? state.units :
   group === "metric" ? state.metric :
+  group === "air" ? (state.air ? "1" : "0") :
   group === "density" ? state.density : state.theme;
 
 /* The hour pickers. Their labels follow the 12/24-hour setting, so the options
@@ -2395,6 +2513,8 @@ function syncTools() {
   document.getElementById("hint-weather").textContent = HINTS.weather[state.weather];
   document.getElementById("hint-ring").textContent = HINTS.ring[state.ring];
   document.getElementById("hint-metric").textContent = HINTS.metric[state.metric];
+  document.getElementById("hint-air").textContent = HINTS.air[settingValue("air")];
+  document.getElementById("metric-air").hidden = !state.air;
   document.getElementById("hint-density").textContent = HINTS.density[state.density];
   document.getElementById("hint-theme").textContent = state.theme === "auto"
     ? `Dark between ${stamp(CONFIG.nightFrom, state.hour12)} and ` +
@@ -2440,6 +2560,19 @@ function applySetting(group, val) {
   } else if (group === "units" || group === "metric") {
     state[group] = val;
     store.set(LS[group], val);
+    for (const c of cards) c._wxKey = null;
+    repaintAll();
+  } else if (group === "air") {
+    state.air = val === "1";
+    store.set(LS.air, val);
+    // Turning it off takes the ring metric with it if that is what was showing:
+    // leaving the ring on Air would print a column that is no longer fetched.
+    if (!state.air && state.metric === "air") {
+      state.metric = "temp";
+      store.set(LS.metric, "temp");
+    }
+    // Turning it on paints nothing by itself; the fetch is kicked off by the next
+    // pass over the cards, and lands with its own repaint.
     for (const c of cards) c._wxKey = null;
     repaintAll();
   } else {

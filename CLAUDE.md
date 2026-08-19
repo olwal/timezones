@@ -123,8 +123,9 @@ Traps, all of which have already cost time here:
 
 `state` holds it and each field persists to `localStorage` under `worldclock.<name>`.
 Groups: `preset`, `density`, `hour12`, `date`, `nums`, `ticks`, `shade`, `solar`, `hours`
-(four pickers stored as one key), `weather`, `metric`, `ring`, `units`, `theme`. `CONFIG`
-holds the defaults for the four hour boundaries plus the constants that stay constant.
+(four pickers stored as one key), `weather`, `metric`, `ring`, `units`, `air`, `theme`.
+`CONFIG` holds the defaults for the four hour boundaries plus the constants that stay
+constant.
 
 Adding a setting means: a key in `LS`, a field in `state` with a validity check, a
 `<section>` in the popover, a case in `settingValue`, a branch in `applySetting`, and a
@@ -134,6 +135,14 @@ changes ink needs `c._k = undefined` then `repaintAll()`.
 The forecast cache is versioned. A row is
 `[ts, code, temp, feels, rainChance, wind, humidity]` and `WX_CACHE_V` is 2. Widening a
 row means bumping it, or old caches get read past their end.
+
+Air quality is a second cache, not a wider forecast row, under `worldclock.aq.<id>` with
+its own `AQ_CACHE_V`. It is deliberate: widening the forecast row would throw away every
+stored forecast for a field that is off by default. Its rows are
+`[ts, europeanAqi, pm2.5, pm10, ozone, no2]`, matched to a forecast hour by timestamp,
+which works because both come from Open-Meteo as whole UTC hours. `state.air` gates the
+request, and `metric = "air"` cannot outlive it: turning the setting off puts the ring
+back on `temp`, since the column would otherwise stop being fetched.
 
 ## Conventions
 
@@ -161,8 +170,3 @@ row means bumping it, or old caches get read past their end.
 2. **Compact URLs**, parked at the user's request. The recommendation was two base64url
    characters per city, an append-only city table so codes stay stable, and a checksum
    guard that shouts if the table is ever reordered.
-3. **Air quality**, available and deliberately not wired up. Open-Meteo serves pm2.5,
-   pm10, European and US AQI, ozone and nitrogen dioxide from
-   `air-quality-api.open-meteo.com`, free and keyless, but on a second endpoint. It wants
-   its own opt-in setting, off by default, rather than a second request per city for
-   everybody.
