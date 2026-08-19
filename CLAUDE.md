@@ -24,10 +24,13 @@ deploy landed by comparing bytes, which should equal `wc -c index.html`:
     curl -so /dev/null -w '%{size_download}\n' https://timezones.cc/
 
 Anything added at the repo root ships to the public site unless `.assetsignore` excludes
-it. `npx wrangler deploy --dry-run` should report **7 assets**: `index.html`,
-`favicon.svg`, `manifest.webmanifest`, `sw.js` and three icons. If that number grows,
-something is leaking. An earlier manual upload published the entire `.git` directory this
-way, and it was live for two days.
+it. `npx wrangler deploy --dry-run` must ship exactly **7 assets**: `index.html`,
+`favicon.svg`, `manifest.webmanifest`, `sw.js` and three icons. Wrangler 4 no longer
+prints that count, only `Read N files from the assets directory`, which counts
+everything it walked before `.assetsignore` applied. Run it under `WRANGLER_LOG=debug`
+and read the `Ignoring asset:` lines instead: whatever is not listed there ships. If
+anything beyond those seven survives, something is leaking. An earlier manual upload
+published the entire `.git` directory this way, and it was live for two days.
 
 ## How to verify a change
 
@@ -131,13 +134,10 @@ row means bumping it, or old caches get read past their end.
    explicitly not a feature here, so modules are fine. `worker/` must go in
    `.assetsignore`, and note that the Worker stops being assets-only, so a broken `main`
    takes the whole site down rather than just the API.
-2. **Screenshots in `docs/` are stale**, `settings.png` most of all: it predates the Hours
-   pickers, the presets, the date formats and the ring metric, and the README links to it
-   from the Configuration section.
-3. **Compact URLs**, parked at the user's request. The recommendation was two base64url
+2. **Compact URLs**, parked at the user's request. The recommendation was two base64url
    characters per city, an append-only city table so codes stay stable, and a checksum
    guard that shouts if the table is ever reordered.
-4. **Air quality**, available and deliberately not wired up. Open-Meteo serves pm2.5,
+3. **Air quality**, available and deliberately not wired up. Open-Meteo serves pm2.5,
    pm10, European and US AQI, ozone and nitrogen dioxide from
    `air-quality-api.open-meteo.com`, free and keyless, but on a second endpoint. It wants
    its own opt-in setting, off by default, rather than a second request per city for

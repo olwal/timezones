@@ -17,7 +17,7 @@ the domes show no icons; clocks, sunrise and sunset are computed locally.
 The board is the whole page. Controls are three floating buttons in the bottom-right:
 add a city, copy-link, and settings.
 
-Each card carries a dial, a twelve-hour forecast ring, the local time, a sky dome
+Each card carries a dial, an eleven-hour forecast ring, the local time, a sky dome
 showing where the sun is in that city's day, and a countdown to the next end of the
 working day.
 
@@ -27,12 +27,12 @@ The second hand is a continuous sweep at real speed, not a once-a-second tick. M
 off the dial, it moves 1.5° every quarter second rather than jumping 6° and sitting
 still.
 
-![Day, dusk and night side by side](docs/card-detail.png)
+![Night, dawn and full day side by side](docs/card-detail.png)
 
-Tokyo in full daylight, Delhi mid-fade at 06:10, London at night. The card is the
-sky: it darkens with the city, through sunset and dusk to night, and the dial stays
-pale on it like a moon. The page itself follows your own clock, not the board's, so
-adding a city never flips the whole screen.
+London at night, Singapore mid-fade at 05:46, San Francisco in full daylight. The
+card is the sky: it darkens with the city, through sunset and dusk to night, and the
+dial stays pale on it like a moon. The page itself follows your own clock, not the
+board's, so adding a city never flips the whole screen.
 
 ![The dashboard at night](docs/board-dark.png)
 
@@ -319,7 +319,7 @@ the countdown at the foot of each card, and the dark hours, which are what shade
 on *Working hours*. Four hour pickers, labelled in whichever format you have chosen, and
 persisted like every other setting.
 
-![The hour pickers in the settings menu](docs/settings.png)
+![The hour pickers in the settings menu](docs/hours.png)
 
 The window that counts as night is read as a window on the 24-hour circle rather than
 as an overnight span, so either order of its two ends means something: `20:00` to `06:00`
