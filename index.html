@@ -102,7 +102,10 @@ body {
 .dock.open .ico-close { display: block; }
 
 .popover {
-  position: fixed; right: 18px; bottom: 68px; z-index: 26; width: 272px;
+  /* Wider than it was, because the label now sits beside the control rather than
+     above it. Capped against the viewport so it still fits a narrow phone. */
+  position: fixed; right: 18px; bottom: 68px; z-index: 26;
+  width: min(340px, calc(100vw - 36px));
   background: var(--face); color: var(--fg);
   border: 1px solid var(--edge); border-radius: 12px;
   box-shadow: 0 24px 60px -24px rgba(0,0,0,.55);
@@ -110,13 +113,39 @@ body {
   max-height: calc(100vh - 100px); overflow-y: auto;
 }
 .popover[hidden] { display: none; }
-.popover section { padding-top: 13px; }
+.popover .grp { padding-top: 14px; }
+.popover .grp:first-child { padding-top: 4px; }
 .popover h2 {
-  margin: 0 0 7px; font-size: 9px; font-weight: 600;
+  margin: 0 0 4px; font-size: 9px; font-weight: 600;
   letter-spacing: .14em; text-transform: uppercase; color: var(--muted);
 }
-.hint { margin: 7px 0 0; font-size: 10.5px; line-height: 1.5; color: var(--muted); }
-.popover section.muted { opacity: .45; }
+/* Label left, control right. The explanation is on the row's title: fifteen
+   paragraphs made the menu taller than any screen it could open on. */
+.popover .row {
+  display: grid; grid-template-columns: 74px 1fr;
+  align-items: center; gap: 10px; padding: 4px 0;
+}
+.popover .rl {
+  font-size: 9.5px; letter-spacing: .1em; text-transform: uppercase;
+  color: var(--muted); cursor: default;
+}
+.popover .row.muted { opacity: .45; }
+
+/* On/off settings are a switch rather than a pair of buttons: two named modes
+   earn a segmented control, but "on" and "off" do not. */
+.tgl {
+  justify-self: start; position: relative; width: 34px; height: 19px; padding: 0;
+  border: 1px solid var(--edge); border-radius: 999px; background: transparent;
+  cursor: pointer; transition: background-color .12s ease, border-color .12s ease;
+}
+.tgl span {
+  position: absolute; top: 2px; left: 2px; width: 13px; height: 13px;
+  border-radius: 50%; background: var(--muted);
+  transition: transform .12s ease, background-color .12s ease;
+}
+.tgl[aria-checked="true"] { background: var(--accent); border-color: var(--accent); }
+.tgl[aria-checked="true"] span { transform: translateX(15px); background: #14140f; }
+.tgl:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 /* The dial is a set of targets: click an hour mark to go there, the centre to
    come back to now. touch-action stays permissive so a tap on a dial does not
    cost the page its scroll. */
@@ -132,9 +161,9 @@ body {
   border-radius: var(--r); overflow: hidden;
 }
 .seg button {
-  flex: 1; font: inherit; font-size: 10.5px; letter-spacing: .07em;
+  flex: 1; font: inherit; font-size: 10px; letter-spacing: .05em;
   text-transform: uppercase; white-space: nowrap;
-  padding: 7px 4px; background: transparent; color: var(--fg);
+  padding: 6px 3px; background: transparent; color: var(--fg);
   border: 0; cursor: pointer; transition: background-color .12s ease;
 }
 .seg button + button { border-left: 1px solid var(--edge); }
@@ -145,13 +174,12 @@ body {
    night. Both were constants in the script until they turned out to be the two
    numbers people most want to disagree with. */
 .hours {
-  display: grid; grid-template-columns: auto 1fr auto 1fr;
-  align-items: center; gap: 6px 7px;
+  display: grid; grid-template-columns: 1fr auto 1fr;
+  align-items: center; gap: 7px;
 }
-.hours > span {
-  font-size: 9.5px; letter-spacing: .12em; text-transform: uppercase; color: var(--muted);
+.hours > span.to {
+  font-size: 9.5px; letter-spacing: .04em; color: var(--muted); opacity: .8;
 }
-.hours > span.to { letter-spacing: .04em; text-transform: none; opacity: .8; }
 .hours select {
   font: inherit; font-size: 11.5px; font-variant-numeric: tabular-nums;
   width: 100%; color: var(--fg); background: transparent;
@@ -307,8 +335,8 @@ html.frozen .hand-sec { opacity: .3; }
   from { background: rgba(245,196,0,.22); }
   to   { background: rgba(245,196,0,0); }
 }
-.popover section.flash { animation: flash-section 1.1s ease-out; border-radius: var(--r); }
-@media (prefers-reduced-motion: reduce) { .popover section.flash { animation: none; } }
+.popover .row.flash { animation: flash-section 1.1s ease-out; border-radius: var(--r); }
+@media (prefers-reduced-motion: reduce) { .popover .row.flash { animation: none; } }
 
 /* The sunrise and sunset times used to sit in a row of their own under the dome.
    They are inside it now, at the two ends of the arc they belong to, which is
@@ -495,139 +523,146 @@ html.blurred .add { opacity: 0; }
   </button>
 </div>
 
+<!-- One row per setting: the label on the left, the control on the right, and the
+     explanation on the row's title rather than under it. Fifteen stacked sections
+     with a paragraph each ran to 1341px, which is taller than the menu can ever
+     show, so Air quality shipped below the fold on every normal screen. -->
 <div class="popover" id="settings" hidden>
-  <section>
-    <h2>Preset</h2>
-    <div class="seg" role="radiogroup" aria-label="Preset" data-group="preset">
-      <button type="button" role="radio" data-val="classic">Classic</button>
-      <button type="button" role="radio" data-val="minimal">Minimal</button>
-      <button type="button" role="radio" data-val="weather">Weather</button>
+  <div class="grp">
+    <h2>Board</h2>
+    <div class="row" id="sec-preset">
+      <span class="rl">Preset</span>
+      <div class="seg" role="radiogroup" aria-label="Preset" data-group="preset">
+        <button type="button" role="radio" data-val="classic">Classic</button>
+        <button type="button" role="radio" data-val="minimal">Minimal</button>
+        <button type="button" role="radio" data-val="weather">Weather</button>
+      </div>
     </div>
-    <p class="hint" id="hint-preset"></p>
-  </section>
-  <section>
-    <h2>Density</h2>
-    <div class="seg" role="radiogroup" aria-label="Density" data-group="density">
-      <button type="button" role="radio" data-val="auto">Auto</button>
-      <button type="button" role="radio" data-val="full">Full</button>
-      <button type="button" role="radio" data-val="compact">Compact</button>
+    <div class="row" id="sec-density">
+      <span class="rl">Density</span>
+      <div class="seg" role="radiogroup" aria-label="Density" data-group="density">
+        <button type="button" role="radio" data-val="auto">Auto</button>
+        <button type="button" role="radio" data-val="full">Full</button>
+        <button type="button" role="radio" data-val="compact">Compact</button>
+      </div>
     </div>
-    <p class="hint" id="hint-density"></p>
-  </section>
-  <section>
-    <h2>Time format</h2>
-    <div class="seg" role="radiogroup" aria-label="Time format" data-group="hour12">
-      <button type="button" role="radio" data-val="0">24-hour</button>
-      <button type="button" role="radio" data-val="1">12-hour</button>
+    <div class="row" id="sec-theme">
+      <span class="rl">Theme</span>
+      <div class="seg" role="radiogroup" aria-label="Page theme" data-group="theme">
+        <button type="button" role="radio" data-val="auto">Auto</button>
+        <button type="button" role="radio" data-val="light">Light</button>
+        <button type="button" role="radio" data-val="dark">Dark</button>
+      </div>
     </div>
-  </section>
-  <section id="sec-date">
-    <h2>Date</h2>
-    <div class="seg" role="radiogroup" aria-label="Date format" data-group="date">
-      <button type="button" role="radio" data-val="day">Mon</button>
-      <button type="button" role="radio" data-val="short">Mon 7 Jul</button>
-      <button type="button" role="radio" data-val="iso">2026-07-07</button>
+  </div>
+
+  <div class="grp">
+    <h2>Face</h2>
+    <div class="row" id="sec-nums">
+      <span class="rl">Numerals</span>
+      <div class="seg" role="radiogroup" aria-label="Numerals on the dial" data-group="nums">
+        <button type="button" role="radio" data-val="none">None</button>
+        <button type="button" role="radio" data-val="quarters">12 3 6 9</button>
+        <button type="button" role="radio" data-val="all">All 12</button>
+      </div>
     </div>
-  </section>
-  <section>
-    <h2>Numerals</h2>
-    <div class="seg" role="radiogroup" aria-label="Numerals on the dial" data-group="nums">
-      <button type="button" role="radio" data-val="none">None</button>
-      <button type="button" role="radio" data-val="quarters">12 3 6 9</button>
-      <button type="button" role="radio" data-val="all">All 12</button>
+    <div class="row" id="sec-ticks">
+      <span class="rl">Dial marks</span>
+      <button type="button" class="tgl" role="switch" data-group="ticks"
+        aria-label="Marks on the dial"><span></span></button>
     </div>
-  </section>
-  <section>
-    <h2>Dial marks</h2>
-    <div class="seg" role="radiogroup" aria-label="Marks on the dial" data-group="ticks">
-      <button type="button" role="radio" data-val="1">On</button>
-      <button type="button" role="radio" data-val="0">Off</button>
+    <div class="row" id="sec-hour12">
+      <span class="rl">Time</span>
+      <div class="seg" role="radiogroup" aria-label="Time format" data-group="hour12">
+        <button type="button" role="radio" data-val="0">24h</button>
+        <button type="button" role="radio" data-val="1">12h</button>
+      </div>
     </div>
-    <p class="hint" id="hint-ticks"></p>
-  </section>
-  <section>
-    <h2>Night darkens</h2>
-    <div class="seg" role="radiogroup" aria-label="What darkens at night" data-group="shade">
-      <button type="button" role="radio" data-val="card">The card</button>
-      <button type="button" role="radio" data-val="dial">The dial</button>
+    <div class="row" id="sec-date">
+      <span class="rl">Date</span>
+      <div class="seg" role="radiogroup" aria-label="Date format" data-group="date">
+        <button type="button" role="radio" data-val="day">Mon</button>
+        <button type="button" role="radio" data-val="short">Mon 7 Jul</button>
+        <button type="button" role="radio" data-val="iso">2026-07-07</button>
+      </div>
     </div>
-    <p class="hint" id="hint-shade"></p>
-  </section>
-  <section>
-    <h2>Night follows</h2>
-    <div class="seg" role="radiogroup" aria-label="What counts as night" data-group="solar">
-      <button type="button" role="radio" data-val="0">Working hours</button>
-      <button type="button" role="radio" data-val="1">Real sun</button>
+  </div>
+
+  <div class="grp">
+    <h2>Night</h2>
+    <div class="row" id="sec-shade">
+      <span class="rl">Darkens</span>
+      <div class="seg" role="radiogroup" aria-label="What darkens at night" data-group="shade">
+        <button type="button" role="radio" data-val="card">The card</button>
+        <button type="button" role="radio" data-val="dial">The dial</button>
+      </div>
     </div>
-    <p class="hint" id="hint-solar"></p>
-  </section>
-  <section id="sec-hours">
-    <h2>Hours</h2>
-    <div class="hours">
-      <span>Day</span>
-      <select data-hour="morning" aria-label="Working day starts"></select>
-      <span class="to">to</span>
-      <select data-hour="evening" aria-label="Working day ends"></select>
-      <span>Dark</span>
-      <select data-hour="nightFrom" aria-label="Dark from"></select>
-      <span class="to">to</span>
-      <select data-hour="nightTo" aria-label="Dark until"></select>
+    <div class="row" id="sec-solar">
+      <span class="rl">Follows</span>
+      <div class="seg" role="radiogroup" aria-label="What counts as night" data-group="solar">
+        <button type="button" role="radio" data-val="0">Hours</button>
+        <button type="button" role="radio" data-val="1">Real sun</button>
+      </div>
     </div>
-    <p class="hint" id="hint-hours"></p>
-  </section>
-  <section id="sec-weather">
-    <h2>Weather forecast</h2>
-    <div class="seg" role="radiogroup" aria-label="Weather forecast" data-group="weather">
-      <button type="button" role="radio" data-val="dial">Dial</button>
-      <button type="button" role="radio" data-val="dome">Dome</button>
-      <button type="button" role="radio" data-val="off">Off</button>
+    <div class="row" id="sec-hours">
+      <span class="rl">Day</span>
+      <div class="hours">
+        <select data-hour="morning" aria-label="Working day starts"></select>
+        <span class="to">to</span>
+        <select data-hour="evening" aria-label="Working day ends"></select>
+      </div>
     </div>
-    <p class="hint" id="hint-weather"></p>
-  </section>
-  <section id="sec-air">
-    <h2>Air quality</h2>
-    <div class="seg" role="radiogroup" aria-label="Air quality" data-group="air">
-      <button type="button" role="radio" data-val="0">Off</button>
-      <button type="button" role="radio" data-val="1">On</button>
+    <div class="row" id="sec-dark">
+      <span class="rl">Dark</span>
+      <div class="hours">
+        <select data-hour="nightFrom" aria-label="Dark from"></select>
+        <span class="to">to</span>
+        <select data-hour="nightTo" aria-label="Dark until"></select>
+      </div>
     </div>
-    <p class="hint" id="hint-air"></p>
-  </section>
-  <section id="sec-metric">
-    <h2>Ring metric</h2>
-    <div class="seg" role="radiogroup" aria-label="What the numbers show" data-group="metric">
-      <button type="button" role="radio" data-val="temp">Temp</button>
-      <button type="button" role="radio" data-val="feels">Feels</button>
-      <button type="button" role="radio" data-val="rain">Rain</button>
-      <button type="button" role="radio" data-val="wind">Wind</button>
-      <button type="button" role="radio" data-val="air" id="metric-air" hidden>Air</button>
+  </div>
+
+  <div class="grp">
+    <h2>Weather</h2>
+    <div class="row" id="sec-weather">
+      <span class="rl">Forecast</span>
+      <div class="seg" role="radiogroup" aria-label="Weather forecast" data-group="weather">
+        <button type="button" role="radio" data-val="dial">Dial</button>
+        <button type="button" role="radio" data-val="dome">Dome</button>
+        <button type="button" role="radio" data-val="off">Off</button>
+      </div>
     </div>
-    <p class="hint" id="hint-metric"></p>
-  </section>
-  <section id="sec-ring">
-    <h2>Dial ring</h2>
-    <div class="seg" role="radiogroup" aria-label="Dial ring" data-group="ring">
-      <button type="button" role="radio" data-val="icons">Icons</button>
-      <button type="button" role="radio" data-val="numbers">Numbers</button>
-      <button type="button" role="radio" data-val="both">Both</button>
+    <div class="row" id="sec-air">
+      <span class="rl">Air quality</span>
+      <button type="button" class="tgl" role="switch" data-group="air"
+        aria-label="Air quality"><span></span></button>
     </div>
-    <p class="hint" id="hint-ring"></p>
-  </section>
-  <section>
-    <h2>Temperature</h2>
-    <div class="seg" role="radiogroup" aria-label="Temperature unit" data-group="units">
-      <button type="button" role="radio" data-val="c">&deg;C</button>
-      <button type="button" role="radio" data-val="f">&deg;F</button>
+    <div class="row" id="sec-metric">
+      <span class="rl">Metric</span>
+      <div class="seg" role="radiogroup" aria-label="What the numbers show" data-group="metric">
+        <button type="button" role="radio" data-val="temp">Temp</button>
+        <button type="button" role="radio" data-val="feels">Feels</button>
+        <button type="button" role="radio" data-val="rain">Rain</button>
+        <button type="button" role="radio" data-val="wind">Wind</button>
+        <button type="button" role="radio" data-val="air" id="metric-air" hidden>Air</button>
+      </div>
     </div>
-  </section>
-  <section>
-    <h2>Page theme</h2>
-    <div class="seg" role="radiogroup" aria-label="Page theme" data-group="theme">
-      <button type="button" role="radio" data-val="auto">Auto</button>
-      <button type="button" role="radio" data-val="light">Light</button>
-      <button type="button" role="radio" data-val="dark">Dark</button>
+    <div class="row" id="sec-ring">
+      <span class="rl">Ring</span>
+      <div class="seg" role="radiogroup" aria-label="Dial ring" data-group="ring">
+        <button type="button" role="radio" data-val="icons">Icons</button>
+        <button type="button" role="radio" data-val="numbers">Numbers</button>
+        <button type="button" role="radio" data-val="both">Both</button>
+      </div>
     </div>
-    <p class="hint" id="hint-theme"></p>
-  </section>
+    <div class="row" id="sec-units">
+      <span class="rl">Units</span>
+      <div class="seg" role="radiogroup" aria-label="Temperature unit" data-group="units">
+        <button type="button" role="radio" data-val="c">&deg;C</button>
+        <button type="button" role="radio" data-val="f">&deg;F</button>
+      </div>
+    </div>
+  </div>
 </div>
 
 <div class="sheet" id="sheet" role="dialog" aria-modal="true" aria-labelledby="sheetTitle">
@@ -2504,26 +2539,39 @@ function syncTools() {
       b.tabIndex = on ? 0 : -1;
     }
   }
+  for (const t of settings.querySelectorAll(".tgl")) {
+    t.setAttribute("aria-checked", settingValue(t.dataset.group) === "1" ? "true" : "false");
+  }
   fillHourSelects();
   const dark = [stamp(CONFIG.nightFrom, state.hour12), stamp(CONFIG.nightTo, state.hour12)];
   const preset = presetNow();
-  document.getElementById("hint-preset").textContent = preset
-    ? HINTS.preset[preset]
-    : "Each preset sets the numerals, the marks and the forecast in one go.";
-  document.getElementById("hint-ticks").textContent = HINTS.ticks[settingValue("ticks")];
-  document.getElementById("hint-shade").textContent = HINTS.shade[state.shade];
-  document.getElementById("hint-hours").textContent = HINTS.hours;
-  document.getElementById("hint-solar").textContent = HINTS.solar[settingValue("solar")](dark);
-  document.getElementById("hint-weather").textContent = HINTS.weather[state.weather];
-  document.getElementById("hint-ring").textContent = HINTS.ring[state.ring];
-  document.getElementById("hint-metric").textContent = HINTS.metric[state.metric];
-  document.getElementById("hint-air").textContent = HINTS.air[settingValue("air")];
-  document.getElementById("metric-air").hidden = !state.air;
-  document.getElementById("hint-density").textContent = HINTS.density[state.density];
-  document.getElementById("hint-theme").textContent = state.theme === "auto"
+  /* The explanations live on each row's title now. They still say what they said
+     under the old sections, including the ones that quote your own hours back at
+     you, but they cost a hover instead of a paragraph apiece. */
+  const tip = (id, text) => { document.getElementById(id).title = text; };
+  tip("sec-preset", preset ? HINTS.preset[preset]
+    : "Each preset sets the numerals, the marks and the forecast in one go.");
+  tip("sec-density", HINTS.density[state.density]);
+  tip("sec-theme", state.theme === "auto"
     ? `Dark between ${stamp(CONFIG.nightFrom, state.hour12)} and ` +
       `${stamp(CONFIG.nightTo, state.hour12)} where you are.`
-    : "";
+    : "Light or dark, whatever the hour where you are.");
+  tip("sec-nums", "Numerals on the dial: none, the quarters, or all twelve.");
+  tip("sec-ticks", HINTS.ticks[settingValue("ticks")]);
+  tip("sec-hour12", "24-hour or 12-hour, everywhere a time is written.");
+  tip("sec-date", "The date beside each time: the weekday, the weekday with the " +
+                  "date, or ISO for when it has to be unambiguous.");
+  tip("sec-shade", HINTS.shade[state.shade]);
+  tip("sec-solar", HINTS.solar[settingValue("solar")](dark));
+  tip("sec-hours", HINTS.hours);
+  tip("sec-dark", HINTS.hours);
+  tip("sec-weather", HINTS.weather[state.weather]);
+  tip("sec-air", HINTS.air[settingValue("air")]);
+  tip("sec-metric", HINTS.metric[state.metric]);
+  tip("sec-ring", HINTS.ring[state.ring]);
+  tip("sec-units", "Open-Meteo is asked for Celsius either way, so switching costs " +
+                   "no request and never invalidates the cache.");
+  document.getElementById("metric-air").hidden = !state.air;
   // The ring only exists in dial mode; dim rather than hide, so it stays findable.
   document.getElementById("sec-ring").classList.toggle("muted", state.weather !== "dial");
 }
@@ -2588,7 +2636,10 @@ function applySetting(group, val) {
 
 settings.addEventListener("click", e => {
   const b = e.target.closest("button[role=radio]");
-  if (b) applySetting(b.parentElement.dataset.group, b.dataset.val);
+  if (b) { applySetting(b.parentElement.dataset.group, b.dataset.val); return; }
+  // A switch carries its own group and flips whatever it is currently showing.
+  const t = e.target.closest(".tgl");
+  if (t) applySetting(t.dataset.group, settingValue(t.dataset.group) === "1" ? "0" : "1");
 });
 
 // The hour pickers. Every card's darkness ramp and countdown is derived from
@@ -2609,6 +2660,8 @@ settings.addEventListener("keydown", e => {
   const step = e.key === "ArrowRight" || e.key === "ArrowDown" ? 1
     : e.key === "ArrowLeft" || e.key === "ArrowUp" ? -1 : 0;
   if (!step) return;
+  // A switch is one control, not a group: the arrows should pass through it.
+  if (e.target.closest(".tgl")) return;
   const b = e.target.closest("button[role=radio]");
   if (!b) return;
   e.preventDefault();
@@ -2630,7 +2683,7 @@ function openSettingsAt(id) {
   if (!sec) return;
   sec.scrollIntoView({ block: "nearest" });
   // Clear every previous mark, so only the section just asked for carries one.
-  for (const old of settings.querySelectorAll("section.flash")) old.classList.remove("flash");
+  for (const old of settings.querySelectorAll(".row.flash")) old.classList.remove("flash");
   void sec.offsetWidth;                     // restart the animation
   sec.classList.add("flash");
 }
