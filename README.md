@@ -396,15 +396,18 @@ the whole ring appeared to shuffle arbitrarily whenever the time changed. Stoppi
 short leaves a gap at the current hour: the gap is now, and the ring reads clockwise
 from it.
 
-**Dial ring** chooses what the ring carries: `Icons`, `Temps`, or `Both`, which is
-the default: temperatures on an outer ring with conditions on an inner one. The
-viewBox opens up to fit whichever is shown, allowing for the width of the labels as
-well as the radius of the ring, since a reading like `-10°` at the three o'clock
+**Dial ring** chooses what the ring carries: `Icons`, `Numbers`, or `Both`, which is
+the default: numbers on an outer ring with conditions on an inner one. Which number is
+a separate choice, made under Ring metric below, which is why this one is not called
+Temps: it was, back when temperature was the only reading it could carry.
+
+The viewBox opens up to fit whichever is shown, allowing for the width of the labels
+as well as the radius of the ring, since a reading like `-10°` at the three o'clock
 position otherwise overhangs the box and gets clipped. Two rings is also why the
 default costs the dial some size, and why the ring is drawn lighter than the dial's
 own marks: it is context around the clock, not part of it.
 
-![Temperatures and conditions on two rings](docs/ring-both.png)
+![Numbers and conditions on two rings](docs/ring-both.png)
 
 **Ring metric** chooses which number the ring and the dome readout print: `Temp`,
 `Feels` (apparent temperature, what it feels like with wind and humidity), `Rain`

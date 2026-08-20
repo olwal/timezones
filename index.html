@@ -607,7 +607,7 @@ html.blurred .add { opacity: 0; }
     <h2>Dial ring</h2>
     <div class="seg" role="radiogroup" aria-label="Dial ring" data-group="ring">
       <button type="button" role="radio" data-val="icons">Icons</button>
-      <button type="button" role="radio" data-val="temps">Temps</button>
+      <button type="button" role="radio" data-val="numbers">Numbers</button>
       <button type="button" role="radio" data-val="both">Both</button>
     </div>
     <p class="hint" id="hint-ring"></p>
@@ -715,7 +715,7 @@ let state = {
   nums: store.get(LS.nums, "quarters"),    // none | quarters | all
   ticks: store.get(LS.ticks, "1") === "1", // minute and hour marks on the dial
   weather: store.get(LS.weather, "dial"),  // dial | dome | off
-  ring: store.get(LS.ring, "both"),        // icons | temps | both
+  ring: store.get(LS.ring, "both"),        // icons | numbers | both
   units: store.get(LS.units, "c"),         // c | f
   metric: store.get(LS.metric, "temp"),    // temp | feels | rain | wind | air
   // Off by default on purpose: it is a second request per city, on a second
@@ -733,7 +733,11 @@ if (!["card", "dial"].includes(state.shade)) state.shade = "card";
 if (!["day", "short", "iso"].includes(state.date)) state.date = "short";
 if (!["none", "quarters", "all"].includes(state.nums)) state.nums = "quarters";
 if (!["dial", "dome", "off"].includes(state.weather)) state.weather = "dial";
-if (!["icons", "temps", "both"].includes(state.ring)) state.ring = "icons";
+// "temps" was this setting's name while temperature was the only number it could
+// carry. Migrate rather than validate it away, or everyone who chose it lands back
+// on icons for a rename.
+if (state.ring === "temps") { state.ring = "numbers"; store.set(LS.ring, "numbers"); }
+if (!["icons", "numbers", "both"].includes(state.ring)) state.ring = "icons";
 if (!["c", "f"].includes(state.units)) state.units = "c";
 if (!["temp", "feels", "rain", "wind", "air"].includes(state.metric)) state.metric = "temp";
 // Air is the one metric that needs its own fetch, so it cannot outlive the
@@ -1157,7 +1161,7 @@ function clockBox() {
   // and gets clipped.
   const half = state.weather !== "dial" ? 104
     : state.ring === "both" ? TEMP_RING + 14
-    : state.ring === "temps" ? WXRING + 14
+    : state.ring === "numbers" ? WXRING + 14
     : 113;
   const span = half * 2;
   return { box: `${100 - half} ${100 - half} ${span} ${span}`,
@@ -1901,7 +1905,7 @@ function paintDialRing(c, nowMs, data) {
     // not part of it, and in "both" there are two of these rings to keep quiet.
     const op = 0.6 - 0.32 * (i / Math.max(1, rows.length - 1));
     const label = wxDetail(row, { minutes: p2.minutes, h12: state.hour12 }, c);
-    if (state.ring !== "temps") {
+    if (state.ring !== "numbers") {
       const [x, y] = pol(iconR, angle);
       out.push(wxGlyph(key, x, y, both ? 14 : 15, "currentColor", label, op));
     }
@@ -2445,8 +2449,8 @@ const HINTS = {
   },
   ring: {
     icons: "Conditions only. The gap in the ring is the current hour; it reads clockwise from there.",
-    temps: "Temperatures only, at each hour position.",
-    both: "Temperatures on an outer ring, conditions on an inner one."
+    numbers: "The reading chosen under Ring metric, at each hour position, and no icons.",
+    both: "Numbers on an outer ring, conditions on an inner one."
   },
   density: {
     auto: `Compact below ${COMPACT_BELOW}px wide, full above it.`,
