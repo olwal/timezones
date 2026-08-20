@@ -85,6 +85,11 @@ Traps, all of which have already cost time here:
   weather in a screenshot. To make weather deterministic, keep `worldclock.wx.*` in
   localStorage and run the same page twice against one `--user-data-dir`, so the second
   run paints from the warm cache.
+- **A stale service worker will serve you the previous build.** Probes stage a copy of
+  the tree and serve it; reuse the same port and `--user-data-dir` and the worker
+  registered by the last run answers from its cache, so edits appear not to have
+  landed. It cost an hour once: newly added cities resolved to the wrong cards and
+  the table looked broken when it was fine. Use a fresh port and profile per run.
 - Forecast rows exist from today onwards only. Freezing the board into the past correctly
   shows no conditions and no temperature. That is not a bug.
 

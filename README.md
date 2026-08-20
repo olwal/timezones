@@ -64,9 +64,10 @@ Cruz, an hour and a half before their morning, and 22:30 in Tokyo.
 
 ![Converting a time across every city](docs/convert.png)
 
-Clicking a city name opens a search over all 458 cities, each row showing its current
+Clicking a city name opens a search over all 545 entries, each row showing its current
 local time. Same-name cities are distinguished by region, which is why `Cambridge`
-appears twice below.
+appears twice below, and why there is a Newcastle in England and another in New South
+Wales.
 
 ![Searching for a city](docs/city-picker.png)
 
@@ -151,6 +152,18 @@ order is saved and written back to the URL. This uses HTML5 drag-and-drop, so it
 mouse and trackpad only; touch dragging is not supported.
 
 ![The drop caret during a reorder](docs/drag-caret.png)
+
+Nineteen of those entries are zones rather than cities, for when the question is what
+time it is in CET rather than in Prague. `GMT`, `WET`, `CET`, `EET`, `MSK`, `GST`,
+`IST`, `CST`, `JST`, `KST`, `SGT`, `AET`, `NZT`, `AKT`, `HST`, and `ET`, `CT`, `MT`
+and `PT` for the United States. They behave like any other card, offset and all, and
+carry a representative point in the zone so the dome and the sunrise still draw
+something truthful rather than nothing.
+
+They are named for the zone, not for the season. A card labelled `PDT` would be wrong
+every winter, and `CET` is CEST for half the year, so the card says `PT` and `CET` and
+the offset beside it does the seasonal work. Both seasonal spellings are search
+aliases, so typing `pdt` or `cest` finds the right card.
 
 Where a state or province is the more useful label the card shows that instead of the
 country (`Santa Cruz / California`, `Cambridge / Massachusetts`). Same-name cities get
