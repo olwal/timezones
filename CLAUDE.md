@@ -97,6 +97,9 @@ Traps, all of which have already cost time here:
   black reads about 4.6:1 and white about 4.5:1. Interpolating both gives grey on grey at
   the midpoint, which is the exact failure the fade exists to avoid. The card cross-fades
   its background over 0.35s and its `color` not at all, deliberately.
+- **The dome carries the glyph and no number.** The reading that used to sit beside the
+  sun is on the line under the time now, where it is one of five rather than a lone
+  value crowding the sunrise and sunset labels.
 - **The sun's glyph is the current conditions.** A clear sky's icon is a rayed sun, so the
   two coincide when it is clear. The day form is used at every hour on purpose: the night
   form of "clear" is a moon, which would put a second moon on the dome.
@@ -104,12 +107,13 @@ Traps, all of which have already cost time here:
   `TERM_MAX` caps the terminator so thin phases still read, and only the last 2% at either
   end is exact. An earlier version outlined the whole disc so a new moon had a shape, and
   every phase then read as full.
-- **The forecast ring shows 11 hours, not 12.** The twelfth lands on the same angle as the
-  current hour, closing the ring into a seamless circle with no reading direction. The
-  gap that leaves now carries the metric's caption (`°C`, `Feels`, `Rain`, `km/h`,
-  `AQI`), smaller and fainter than the readings. It used to mean "now" on its own, which
-  stopped being worth a slot once there were five metrics and no way to tell which one
-  the numbers were.
+- **The forecast ring shows 11 hours, not 12,** and starts at the hour you are in. The
+  twelfth lands on the same angle as the first, closing the ring into a seamless circle
+  with no reading direction, so the gap falls on the hour just gone. Starting it at the
+  next hour instead put the gap under the hour hand and left the ring silent about the
+  one hour the rest of the card was describing. Naming the metric in that gap was tried
+  and reverted: however faintly it was drawn it read as a twelfth reading. The metric is
+  named under the time instead, underlined among the other readings.
 - **A plain press on a dial must not call `preventDefault`.** Cancelling `pointerdown`
   suppresses the compatibility mouse events, and click-to-jump depends on the click that
   follows. The native card drag is stopped by clearing `draggable`, selection by
@@ -127,7 +131,8 @@ Traps, all of which have already cost time here:
 
 `state` holds it and each field persists to `localStorage` under `worldclock.<name>`.
 Groups: `preset`, `density`, `hour12`, `date`, `nums`, `ticks`, `shade`, `solar`, `hours`
-(four pickers stored as one key), `weather`, `metric`, `ring`, `units`, `air`, `theme`.
+(four pickers stored as one key), `weather`, `metric`, `ring`, `units`, `air`,
+`details`, `caps`, `theme`.
 `CONFIG` holds the defaults for the four hour boundaries plus the constants that stay
 constant.
 

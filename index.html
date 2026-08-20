@@ -362,10 +362,20 @@ html.frozen .hand-sec { opacity: .3; }
    metric across twelve hours; this shows all of them for the hour you are in,
    which is the question actually being asked of a clock on a board. */
 .nowline {
-  margin-top: 3px; text-align: center; font-size: 10px; line-height: 1.45;
+  margin-top: 4px; font-size: 10px; line-height: 1.5;
   color: var(--muted); font-variant-numeric: tabular-nums;
 }
-.nowline b { font-weight: 600; color: inherit; }
+/* Space, not punctuation: five readings separated by middots is mostly middots.
+   The gap has to be wide enough to read as a separator on its own. */
+.nl-row {
+  display: flex; flex-wrap: wrap; justify-content: center; gap: 2px 13px;
+}
+/* The reading the ring is drawing. An underline says "this one" without making
+   it heavier than the rest of the line. */
+.nowline u {
+  text-decoration: underline; text-underline-offset: 2.5px;
+  text-decoration-thickness: 1px; text-decoration-color: var(--accent);
+}
 .mini-wx { display: none; justify-content: center; gap: 3px; margin-top: 3px; }
 .mini-wx svg { width: 15px; height: 15px; opacity: .55; }
 
@@ -555,6 +565,11 @@ html.blurred .add { opacity: 0; }
         <button type="button" role="radio" data-val="compact">Compact</button>
       </div>
     </div>
+    <div class="row" id="sec-caps">
+      <span class="rl">City caps</span>
+      <button type="button" class="tgl" role="switch" data-group="caps"
+        aria-label="Capitalise city names"><span></span></button>
+    </div>
     <div class="row" id="sec-theme">
       <span class="rl">Theme</span>
       <div class="seg" role="radiogroup" aria-label="Page theme" data-group="theme">
@@ -590,7 +605,7 @@ html.blurred .add { opacity: 0; }
     <div class="row" id="sec-date">
       <span class="rl">Date</span>
       <div class="seg" role="radiogroup" aria-label="Date format" data-group="date">
-        <button type="button" role="radio" data-val="day">Mon</button>
+        <button type="button" role="radio" data-val="day">Monday</button>
         <button type="button" role="radio" data-val="short">Mon 7 Jul</button>
         <button type="button" role="radio" data-val="iso">2026-07-07</button>
       </div>
@@ -645,6 +660,11 @@ html.blurred .add { opacity: 0; }
       <span class="rl">Air quality</span>
       <button type="button" class="tgl" role="switch" data-group="air"
         aria-label="Air quality"><span></span></button>
+    </div>
+    <div class="row" id="sec-details">
+      <span class="rl">Readings</span>
+      <button type="button" class="tgl" role="switch" data-group="details"
+        aria-label="Readings under the time"><span></span></button>
     </div>
     <div class="row" id="sec-metric">
       <span class="rl">Metric</span>
@@ -728,6 +748,8 @@ const LS = {
   units: "worldclock.units",
   metric: "worldclock.metric",
   air: "worldclock.air",
+  details: "worldclock.details",
+  caps: "worldclock.caps",
   density: "worldclock.density"
 };
 const store = {
@@ -765,6 +787,8 @@ let state = {
   // Off by default on purpose: it is a second request per city, on a second
   // endpoint, and most boards never ask the question.
   air: store.get(LS.air, "0") === "1",
+  details: store.get(LS.details, "1") === "1", // the readings under the time
+  caps: store.get(LS.caps, "0") === "1",       // SAN FRANCISCO rather than San Francisco
   density: store.get(LS.density, "auto")   // auto | full | compact
 };
 if (!["auto", "full", "compact"].includes(state.density)) state.density = "auto";
@@ -1151,8 +1175,6 @@ function skyBodies() {
       <g class="sun-clear">${rays}<circle r="3.4" fill="var(--sun)"/></g>
     </g>
     <g class="sun-wx"></g>
-    <text class="sun-temp" x="11" y="0.5" text-anchor="start" dominant-baseline="central"
-      font-size="9.5" font-weight="500" fill="currentColor" opacity=".75"></text>
   </g>`;
 }
 
@@ -1311,7 +1333,7 @@ function buildCards() {
     el.innerHTML = `
       <button class="card__remove" title="Remove" aria-label="Remove ${city.name}">&times;</button>
       <button class="card__name" title="Change city">
-        <b>${city.name}</b><span class="meta"></span>
+        <b>${state.caps ? city.name.toUpperCase() : city.name}</b><span class="meta"></span>
       </button>
       <svg class="clock" viewBox="${clockBox().box}" style="max-width:${clockBox().px}px"
         role="img" aria-label="Analog clock for ${city.name}">${faceSVG()}</svg>
@@ -1415,7 +1437,6 @@ function buildCards() {
       sunBody: el.querySelector(".sun-body"),
       sunClear: el.querySelector(".sun-clear"),
       sunWx: el.querySelector(".sun-wx"),
-      sunTemp: el.querySelector(".sun-temp"),
       moonG: el.querySelector(".sky-moon"),
       moonBody: el.querySelector(".moon-body"),
       moonLit: el.querySelector(".moon-lit"),
@@ -1599,7 +1620,7 @@ function update() {
     // ---- sun and moon both creep round the dome in real time, each on its own
     // orbit, so one of the two is always under the horizon.
     const lst = siderealTime(days, c.city.lon);
-    placeBody(c.sunG, c.sunBody, domeSpot(c.city.lat, sEq.dec, lst - sEq.ra, SUN_H0), c.sunTemp);
+    placeBody(c.sunG, c.sunBody, domeSpot(c.city.lat, sEq.dec, lst - sEq.ra, SUN_H0));
     placeBody(c.moonG, c.moonBody, domeSpot(c.city.lat, mEq.dec, lst - mEq.ra, MOON_H0));
   }
 
@@ -1764,18 +1785,15 @@ const windValue = v => Math.round(state.units === "f" ? v * 0.621371 : v);
    enough to overhang the box and get clipped; the single readout on the dome has
    room and reads better with the unit on it. */
 const METRICS = {
-  temp:  { col: WXCOL.TEMP,  ring: fmtTemp,                  full: fmtTemp,
-           cap: () => state.units === "f" ? "°F" : "°C" },
-  feels: { col: WXCOL.FEELS, ring: fmtTemp,                  full: fmtTemp,
-           cap: () => "Feels" },
-  rain:  { col: WXCOL.POP,   ring: v => Math.round(v) + "%", full: v => Math.round(v) + "%",
-           cap: () => "Rain" },
+  temp:  { col: WXCOL.TEMP,  ring: fmtTemp,                  full: fmtTemp },
+  feels: { col: WXCOL.FEELS, ring: fmtTemp,                  full: fmtTemp },
+  rain:  { col: WXCOL.POP,   ring: v => Math.round(v) + "%", full: v => Math.round(v) + "%" },
   wind:  { col: WXCOL.WIND,  ring: v => String(windValue(v)),
-           full: v => windValue(v) + windUnit(), cap: () => windUnit() },
+           full: v => windValue(v) + windUnit()},
   // The only metric that is not in the forecast row: it comes from the air
   // quality request and is matched to the hour the row is for.
   air:   { aq: AQCOL.AQI,    ring: v => String(Math.round(v)),
-           full: v => Math.round(v) + " AQI", cap: () => "AQI" }
+           full: v => Math.round(v) + " AQI"}
 };
 const metricOf = (row, form, c) => {
   const m = METRICS[state.metric] || METRICS.temp;
@@ -1829,37 +1847,42 @@ function showNow(c, row) {
     // The rayed sun steps aside only when something else is there to draw.
     c.sunClear.style.display = glyph ? "none" : "";
   }
-  const label = row == null ? "" : metricOf(row, "full", c);
-  if (c.sunTemp.textContent !== label) c.sunTemp.textContent = label;
-
-  const line = nowLine(c, row);
+  const line = state.details ? nowLine(c, row) : "";
   if (c._nowLine !== line) { c._nowLine = line; c.nowline.innerHTML = line; }
 }
 
-/* Everything known about the hour you are actually in, under the time. The
-   ring answers "what is coming"; this answers "what is it like there now",
-   which is the question a board of clocks is usually being asked.
+/* Everything known about the hour you are actually in, under the time. The ring
+   answers "what is coming"; this answers "what is it like there now", which is
+   the question a board of clocks is usually being asked.
 
-   Readings the forecast did not carry are left out rather than printed blank,
-   and air quality appears only once its setting has paid for the request. The
-   reading the ring is drawing is emboldened, so the two agree at a glance
-   instead of looking like different numbers. */
+   Two lines, not one. All five readings on a single line ran the width of the
+   card and read as a run-on: the temperature pair belongs together, and the rest
+   are separate answers. Separated by space rather than by punctuation, since
+   five readings and four middots is mostly punctuation.
+
+   Whichever reading the ring is drawing is underlined, so the two are visibly
+   the same number. Readings the forecast did not carry are left out rather than
+   printed blank, and air quality appears only once its setting has paid for the
+   request. */
 function nowLine(c, row) {
   if (row == null) return "";
-  const bits = [];
-  const put = (metric, text) => {
-    if (!text) return;
-    bits.push(state.metric === metric ? "<b>" + text + "</b>" : text);
-  };
-  if (row[WXCOL.TEMP] != null) put("temp", fmtTemp(row[WXCOL.TEMP]));
+  // Each reading is its own element: as bare text they collapse into a single
+  // anonymous flex item and the gap between them disappears.
+  const mark = (metric, text) => state.metric === metric
+    ? `<span><u>${text}</u></span>` : `<span>${text}</span>`;
+  const top = [], rest = [];
+  if (row[WXCOL.TEMP] != null) top.push(mark("temp", fmtTemp(row[WXCOL.TEMP])));
   if (row[WXCOL.FEELS] != null && Math.round(row[WXCOL.FEELS]) !== Math.round(row[WXCOL.TEMP])) {
-    put("feels", "feels " + fmtTemp(row[WXCOL.FEELS]));
+    top.push(mark("feels", "feels " + fmtTemp(row[WXCOL.FEELS])));
   }
-  if (row[WXCOL.POP] != null) put("rain", Math.round(row[WXCOL.POP]) + "% rain");
-  if (row[WXCOL.WIND] != null) put("wind", windValue(row[WXCOL.WIND]) + windUnit());
+  if (row[WXCOL.POP] != null) rest.push(mark("rain", "rain " + Math.round(row[WXCOL.POP]) + "%"));
+  if (row[WXCOL.WIND] != null) {
+    rest.push(mark("wind", "wind " + windValue(row[WXCOL.WIND]) + " " + windUnit()));
+  }
   const aq = aqRow(c.city, row[WXCOL.TS]);
-  if (aq && aq[AQCOL.AQI] != null) put("air", Math.round(aq[AQCOL.AQI]) + " AQI");
-  return bits.join(" · ");
+  if (aq && aq[AQCOL.AQI] != null) rest.push(mark("air", "AQI " + Math.round(aq[AQCOL.AQI])));
+  const line = xs => xs.length ? `<span class="nl-row">${xs.join("")}</span>` : "";
+  return line(top) + line(rest);
 }
 
 /* -----------------------------------------------------------------------
@@ -1967,7 +1990,8 @@ function paintWeather(c, nowMs, sunUp) {
 const RING_HOURS = 11;
 
 function paintDialRing(c, nowMs, data) {
-  const rows = data.rows.filter(r => r[0] > nowMs).slice(0, RING_HOURS);
+  const hourStart = Math.floor(nowMs / 3600000) * 3600000;
+  const rows = data.rows.filter(r => r[0] >= hourStart).slice(0, RING_HOURS);
   const both = state.ring === "both";
   const iconR = both ? ICON_RING_BOTH : WXRING;
   const tempR = both ? TEMP_RING : WXRING;
@@ -1998,20 +2022,6 @@ function paintDialRing(c, nowMs, data) {
     }
   });
 
-  /* The twelfth slot is empty by construction, so name what the ring is counting
-     in it. With five metrics a column of bare numbers no longer says whether it
-     is degrees, a percentage or an air quality index, and the gap is the one
-     place a caption can go without displacing a reading. Drawn smaller and
-     fainter than the readings so it reads as a label rather than a twelfth hour. */
-  if (state.ring !== "icons" && rows.length) {
-    const first = partsFor(c.city.tz, new Date(rows[0][WXCOL.TS]));
-    const gap = ((first.minutes % 720) / 720) * 360 - 30;   // one hour back is now
-    const [x, y] = pol(tempR, gap);
-    const m = METRICS[state.metric] || METRICS.temp;
-    out.push(`<text x="${x.toFixed(1)}" y="${y.toFixed(1)}" text-anchor="middle"
-      dominant-baseline="central" font-size="8.5" letter-spacing=".06em"
-      opacity=".4" fill="currentColor">${m.cap()}</text>`);
-  }
   c.wxRing.innerHTML = out.join("");
 }
 
@@ -2534,6 +2544,14 @@ const HINTS = {
     air:   "European air quality index, at each hour position. Lower is cleaner, " +
            "and the tooltips name the band."
   },
+  details: {
+    "0": "Off. The time and the date, and the readings only in the tooltips.",
+    "1": "On. The current hour's temperature, rain, wind and air under the time."
+  },
+  caps: {
+    "0": "Off. City names as they are written: San Francisco.",
+    "1": "On. City names in capitals: SAN FRANCISCO."
+  },
   air: {
     "0": "Off. Nothing is asked of the air quality service.",
     "1": "On. A second request per city, to a second Open-Meteo endpoint, which is " +
@@ -2565,6 +2583,8 @@ const settingValue = group =>
   group === "units" ? state.units :
   group === "metric" ? state.metric :
   group === "air" ? (state.air ? "1" : "0") :
+  group === "details" ? (state.details ? "1" : "0") :
+  group === "caps" ? (state.caps ? "1" : "0") :
   group === "density" ? state.density : state.theme;
 
 /* The hour pickers. Their labels follow the 12/24-hour setting, so the options
@@ -2625,6 +2645,8 @@ function syncTools() {
   tip("sec-dark", HINTS.hours);
   tip("sec-weather", HINTS.weather[state.weather]);
   tip("sec-air", HINTS.air[settingValue("air")]);
+  tip("sec-details", HINTS.details[settingValue("details")]);
+  tip("sec-caps", HINTS.caps[settingValue("caps")]);
   tip("sec-metric", HINTS.metric[state.metric]);
   tip("sec-ring", HINTS.ring[state.ring]);
   tip("sec-units", "Open-Meteo is asked for Celsius either way, so switching costs " +
@@ -2672,6 +2694,18 @@ function applySetting(group, val) {
     store.set(LS[group], val);
     for (const c of cards) c._wxKey = null;
     repaintAll();
+  } else if (group === "details") {
+    state.details = val === "1";
+    store.set(LS.details, val);
+    for (const c of cards) c._nowLine = null;
+    repaintAll();
+  } else if (group === "caps") {
+    state.caps = val === "1";
+    store.set(LS.caps, val);
+    // The name is written once, when the card is built, so this is a rebuild.
+    syncTools();
+    buildCards();
+    return;
   } else if (group === "air") {
     state.air = val === "1";
     store.set(LS.air, val);

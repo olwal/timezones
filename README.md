@@ -24,18 +24,24 @@ Each card carries a dial, an eleven-hour forecast ring, the local time, the curr
 hour's readings, a sky dome showing where the sun is in that city's day, and a
 countdown to the next end of the working day.
 
-The line under the time is everything known about the hour you are in:
+Under the time is everything known about the hour you are in:
 
 ```
-16° · feels 15° · 0% rain · 11km/h · 18 AQI
+        15°   feels 14°
+  rain 5%   wind 9 km/h   AQI 18
 ```
 
 The ring answers what is coming; this answers what it is like there now, which is
-the question a board of clocks is usually being asked. Whichever reading the ring is
-drawing is emboldened, so the two read as the same number rather than as two
-different ones. Anything the forecast did not carry is left out rather than printed
-blank, air quality appears only when its setting is on, and the whole line goes in
-compact, where there is no room for it.
+the question a board of clocks is usually being asked. Two lines rather than one:
+all five on a single line ran the width of the card and read as a run-on, and the
+temperature pair belongs together while the rest are separate answers. Separated by
+space rather than by punctuation, since five readings and four middots is mostly
+middots.
+
+Whichever reading the ring is drawing is underlined in the accent, so the two are
+visibly the same number. Anything the forecast did not carry is left out rather than
+printed blank, air quality appears only when its setting is on, the whole block can
+be switched off under **Readings**, and compact drops it, where there is no room.
 
 <img src="docs/second-hand.gif" width="420" alt="The second hand sweeping smoothly">
 
@@ -278,8 +284,10 @@ and they do not count as clicking away, so a paused board stays paused.
   below in a smaller face. The arc gives up 16 units at each end to make room, and
   the horizon line still runs the full width, so the labels sit on the part of it
   that was already extending past the arc.
-- **The sun's glyph is the current conditions**, with the temperature written beside
-  it, the same pairing the dial ring uses. This costs nothing when the sky is clear,
+- **The sun's glyph is the current conditions**, and nothing but the glyph. The number
+  that used to sit beside it is on the line under the time, where it is one of five
+  rather than a lone value crowding the sunrise and sunset labels. This costs nothing
+  when the sky is clear,
   since a clear sky's icon is a rayed sun already, and when it is not clear the sun
   becomes the cloud or the rain that is actually there, keeping its warm halo so its
   position still reads. The day form of the icon is used at every hour on purpose:
@@ -398,7 +406,7 @@ credit the moment anything is changed by hand.
 ## Weather
 
 Three placements for the forecast. Current conditions are not one of them: they are
-always the sun's own glyph on the dome, with the temperature beside it, as above.
+always the sun's own glyph on the dome, as above.
 
 **Dial (default)**: a ring outside the dial, one entry per coming hour. The analog
 face already maps hours to angles, so each forecast hour sits at its own hour
@@ -412,11 +420,11 @@ a full turn of this dial, so the twelfth entry lands on exactly the same angle a
 current hour. That closed the ring into a seamless circle, with the faintest entry
 sitting under the hour hand right beside the strongest, with nothing to read it from, and
 the whole ring appeared to shuffle arbitrarily whenever the time changed. Stopping one
-short leaves a gap at the current hour, and that gap is where the ring says what it is
-counting: `°C`, `Feels`, `Rain`, `km/h` or `AQI`, drawn smaller and fainter than the
-readings so it reads as a caption rather than a twelfth hour. With one metric the
-numbers spoke for themselves. With five, a column of bare numbers no longer says
-whether it is degrees, a percentage or an air quality index.
+short leaves a gap, and the gap falls on the hour just gone.
+
+The ring starts at the hour you are in, not the next one. Starting at the next hour
+put the gap under the hour hand, so the hand pointed at nothing and the hour the rest
+of the card was describing was the one hour the ring left out.
 
 **Dial ring** chooses what the ring carries: `Icons`, `Numbers`, or `Both`, which is
 the default: numbers on an outer ring with conditions on an inner one. Which number is
@@ -466,6 +474,14 @@ air 19 (Good) · pm2.5 5
 
 It keeps its own cache, separate from the forecast's, so turning it on does not
 invalidate every stored forecast for a field most boards never show.
+
+**Readings** switches off the two lines under the time, for a board that wants the
+clocks and nothing else. The tooltips still carry everything, so nothing is lost,
+only unasked for.
+
+**City caps** writes the names as `SAN FRANCISCO` rather than `San Francisco`. Off by
+default. The name is written once, when a card is built, so this rebuilds the board
+rather than repainting it.
 
 **Temperature** switches between `°C` and `°F`. Open-Meteo is asked for Celsius and
 the conversion happens locally, so switching units costs no request and never
