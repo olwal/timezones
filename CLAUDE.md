@@ -105,7 +105,11 @@ Traps, all of which have already cost time here:
   end is exact. An earlier version outlined the whole disc so a new moon had a shape, and
   every phase then read as full.
 - **The forecast ring shows 11 hours, not 12.** The twelfth lands on the same angle as the
-  current hour, closing the ring into a seamless circle with no reading direction.
+  current hour, closing the ring into a seamless circle with no reading direction. The
+  gap that leaves now carries the metric's caption (`°C`, `Feels`, `Rain`, `km/h`,
+  `AQI`), smaller and fainter than the readings. It used to mean "now" on its own, which
+  stopped being worth a slot once there were five metrics and no way to tell which one
+  the numbers were.
 - **A plain press on a dial must not call `preventDefault`.** Cancelling `pointerdown`
   suppresses the compatibility mouse events, and click-to-jump depends on the click that
   follows. The native card drag is stopped by clearing `draggable`, selection by
@@ -128,9 +132,16 @@ Groups: `preset`, `density`, `hour12`, `date`, `nums`, `ticks`, `shade`, `solar`
 constant.
 
 Adding a setting means: a key in `LS`, a field in `state` with a validity check, a
-`<section>` in the popover, a case in `settingValue`, a branch in `applySetting`, and a
-hint. Anything that changes the dial's geometry needs `buildCards()`. Anything that only
-changes ink needs `c._k = undefined` then `repaintAll()`.
+`.row` in the right `.grp` of the popover, a case in `settingValue`, a branch in
+`applySetting`, and a `tip()` line in `syncTools`. Anything that changes the dial's
+geometry needs `buildCards()`. Anything that only changes ink needs `c._k = undefined`
+then `repaintAll()`.
+
+The menu is rows, not sections: label left, control right, explanation on the row's
+`title`. Two named modes get a `.seg`; a genuine on/off gets a `.tgl` switch. Keep it
+short. It reached fifteen sections at 1341px tall, against 655px of menu on a 1440x900
+screen, and the setting added last was on screen and unreachable. Measure the height
+after adding one.
 
 The forecast cache is versioned. A row is
 `[ts, code, temp, feels, rainChance, wind, humidity]` and `WX_CACHE_V` is 2. Widening a

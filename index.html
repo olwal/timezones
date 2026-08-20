@@ -358,6 +358,14 @@ html.frozen .hand-sec { opacity: .3; }
    forecast becomes three hours in a strip. What is left is a tile you can scan.
    At this size the numerals and minute ticks are noise, so they are dropped
    and the dial keeps only its hour bars. */
+/* The current hour's readings, spelled out under the time. The ring shows one
+   metric across twelve hours; this shows all of them for the hour you are in,
+   which is the question actually being asked of a clock on a board. */
+.nowline {
+  margin-top: 3px; text-align: center; font-size: 10px; line-height: 1.45;
+  color: var(--muted); font-variant-numeric: tabular-nums;
+}
+.nowline b { font-weight: 600; color: inherit; }
 .mini-wx { display: none; justify-content: center; gap: 3px; margin-top: 3px; }
 .mini-wx svg { width: 15px; height: 15px; opacity: .55; }
 
@@ -397,6 +405,7 @@ html[data-density="compact"] .digital time { font-size: 15px; }
 html[data-density="compact"] .digital time small { font-size: 8px; margin-left: 1px; }
 html[data-density="compact"] .digital .rel { font-size: 8px; letter-spacing: .06em; }
 html[data-density="compact"] .tedit { font-size: 15px; width: 5.2ch; border-bottom-width: 1px; }
+html[data-density="compact"] .nowline { display: none; }
 html[data-density="compact"] .mini-wx { display: flex; }
 html[data-density="compact"] .next {
   font-size: 9px; letter-spacing: .03em; padding: 5px 2px 7px; margin-top: 5px;
@@ -1314,6 +1323,7 @@ function buildCards() {
         <span class="rel" data-settings="sec-date" role="button" tabindex="0"
           title="Date format"></span>
       </div>
+      <div class="nowline"></div>
       <div class="mini-wx"></div>
       <div class="skyband" data-settings="sec-weather" title="Weather forecast">
         <svg class="dome" viewBox="0 0 200 ${SKY.h}" aria-hidden="true">${domeSVG()}</svg>
@@ -1417,6 +1427,7 @@ function buildCards() {
       hubRing: el.querySelector(".hub-ring"),
       next: el.querySelector(".next"),
       wxRing: el.querySelector(".wxring"),
+      nowline: el.querySelector(".nowline"),
       miniWx: el.querySelector(".mini-wx")
     };
   });
@@ -1753,15 +1764,18 @@ const windValue = v => Math.round(state.units === "f" ? v * 0.621371 : v);
    enough to overhang the box and get clipped; the single readout on the dome has
    room and reads better with the unit on it. */
 const METRICS = {
-  temp:  { col: WXCOL.TEMP,  ring: fmtTemp,                  full: fmtTemp },
-  feels: { col: WXCOL.FEELS, ring: fmtTemp,                  full: fmtTemp },
-  rain:  { col: WXCOL.POP,   ring: v => Math.round(v) + "%", full: v => Math.round(v) + "%" },
+  temp:  { col: WXCOL.TEMP,  ring: fmtTemp,                  full: fmtTemp,
+           cap: () => state.units === "f" ? "°F" : "°C" },
+  feels: { col: WXCOL.FEELS, ring: fmtTemp,                  full: fmtTemp,
+           cap: () => "Feels" },
+  rain:  { col: WXCOL.POP,   ring: v => Math.round(v) + "%", full: v => Math.round(v) + "%",
+           cap: () => "Rain" },
   wind:  { col: WXCOL.WIND,  ring: v => String(windValue(v)),
-           full: v => windValue(v) + windUnit() },
+           full: v => windValue(v) + windUnit(), cap: () => windUnit() },
   // The only metric that is not in the forecast row: it comes from the air
   // quality request and is matched to the hour the row is for.
   air:   { aq: AQCOL.AQI,    ring: v => String(Math.round(v)),
-           full: v => Math.round(v) + " AQI" }
+           full: v => Math.round(v) + " AQI", cap: () => "AQI" }
 };
 const metricOf = (row, form, c) => {
   const m = METRICS[state.metric] || METRICS.temp;
@@ -1817,6 +1831,35 @@ function showNow(c, row) {
   }
   const label = row == null ? "" : metricOf(row, "full", c);
   if (c.sunTemp.textContent !== label) c.sunTemp.textContent = label;
+
+  const line = nowLine(c, row);
+  if (c._nowLine !== line) { c._nowLine = line; c.nowline.innerHTML = line; }
+}
+
+/* Everything known about the hour you are actually in, under the time. The
+   ring answers "what is coming"; this answers "what is it like there now",
+   which is the question a board of clocks is usually being asked.
+
+   Readings the forecast did not carry are left out rather than printed blank,
+   and air quality appears only once its setting has paid for the request. The
+   reading the ring is drawing is emboldened, so the two agree at a glance
+   instead of looking like different numbers. */
+function nowLine(c, row) {
+  if (row == null) return "";
+  const bits = [];
+  const put = (metric, text) => {
+    if (!text) return;
+    bits.push(state.metric === metric ? "<b>" + text + "</b>" : text);
+  };
+  if (row[WXCOL.TEMP] != null) put("temp", fmtTemp(row[WXCOL.TEMP]));
+  if (row[WXCOL.FEELS] != null && Math.round(row[WXCOL.FEELS]) !== Math.round(row[WXCOL.TEMP])) {
+    put("feels", "feels " + fmtTemp(row[WXCOL.FEELS]));
+  }
+  if (row[WXCOL.POP] != null) put("rain", Math.round(row[WXCOL.POP]) + "% rain");
+  if (row[WXCOL.WIND] != null) put("wind", windValue(row[WXCOL.WIND]) + windUnit());
+  const aq = aqRow(c.city, row[WXCOL.TS]);
+  if (aq && aq[AQCOL.AQI] != null) put("air", Math.round(aq[AQCOL.AQI]) + " AQI");
+  return bits.join(" · ");
 }
 
 /* -----------------------------------------------------------------------
@@ -1954,6 +1997,21 @@ function paintDialRing(c, nowMs, data) {
           fill="currentColor">${metricOf(row, "ring", c)}</text></g>`);
     }
   });
+
+  /* The twelfth slot is empty by construction, so name what the ring is counting
+     in it. With five metrics a column of bare numbers no longer says whether it
+     is degrees, a percentage or an air quality index, and the gap is the one
+     place a caption can go without displacing a reading. Drawn smaller and
+     fainter than the readings so it reads as a label rather than a twelfth hour. */
+  if (state.ring !== "icons" && rows.length) {
+    const first = partsFor(c.city.tz, new Date(rows[0][WXCOL.TS]));
+    const gap = ((first.minutes % 720) / 720) * 360 - 30;   // one hour back is now
+    const [x, y] = pol(tempR, gap);
+    const m = METRICS[state.metric] || METRICS.temp;
+    out.push(`<text x="${x.toFixed(1)}" y="${y.toFixed(1)}" text-anchor="middle"
+      dominant-baseline="central" font-size="8.5" letter-spacing=".06em"
+      opacity=".4" fill="currentColor">${m.cap()}</text>`);
+  }
   c.wxRing.innerHTML = out.join("");
 }
 

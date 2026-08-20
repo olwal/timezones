@@ -20,9 +20,22 @@ the domes show no icons; clocks, sunrise and sunset are computed locally.
 The board is the whole page. Controls are three floating buttons in the bottom-right:
 add a city, copy-link, and settings.
 
-Each card carries a dial, an eleven-hour forecast ring, the local time, a sky dome
-showing where the sun is in that city's day, and a countdown to the next end of the
-working day.
+Each card carries a dial, an eleven-hour forecast ring, the local time, the current
+hour's readings, a sky dome showing where the sun is in that city's day, and a
+countdown to the next end of the working day.
+
+The line under the time is everything known about the hour you are in:
+
+```
+16° · feels 15° · 0% rain · 11km/h · 18 AQI
+```
+
+The ring answers what is coming; this answers what it is like there now, which is
+the question a board of clocks is usually being asked. Whichever reading the ring is
+drawing is emboldened, so the two read as the same number rather than as two
+different ones. Anything the forecast did not carry is left out rather than printed
+blank, air quality appears only when its setting is on, and the whole line goes in
+compact, where there is no room for it.
 
 <img src="docs/second-hand.gif" width="420" alt="The second hand sweeping smoothly">
 
@@ -51,9 +64,15 @@ appears twice below.
 
 ![Searching for a city](docs/city-picker.png)
 
-The settings menu shows every mode at once and explains whichever one is selected.
-Two of the settings are modes rather than on/off switches, which a cycling button
-made impossible to discover.
+The settings menu is one row per setting, in four groups: the label on the left, the
+control on the right. Where both options are named modes the control shows every mode
+at once, since a button you have to click repeatedly to discover what it cycles
+through hides them. Where a setting is genuinely on or off, it is a switch.
+
+Each row explains itself on hover rather than under itself. Fifteen sections with a
+paragraph apiece stood 1341px tall, which is taller than the menu can show on a
+1440x900 screen, so the last settings added to it were invisible without scrolling a
+panel that gives no sign it scrolls. The same words are now on each row's title.
 
 ![The settings menu](docs/settings.png)
 
@@ -393,8 +412,11 @@ a full turn of this dial, so the twelfth entry lands on exactly the same angle a
 current hour. That closed the ring into a seamless circle, with the faintest entry
 sitting under the hour hand right beside the strongest, with nothing to read it from, and
 the whole ring appeared to shuffle arbitrarily whenever the time changed. Stopping one
-short leaves a gap at the current hour: the gap is now, and the ring reads clockwise
-from it.
+short leaves a gap at the current hour, and that gap is where the ring says what it is
+counting: `°C`, `Feels`, `Rain`, `km/h` or `AQI`, drawn smaller and fainter than the
+readings so it reads as a caption rather than a twelfth hour. With one metric the
+numbers spoke for themselves. With five, a column of bare numbers no longer says
+whether it is degrees, a percentage or an air quality index.
 
 **Dial ring** chooses what the ring carries: `Icons`, `Numbers`, or `Both`, which is
 the default: numbers on an outer ring with conditions on an inner one. Which number is
